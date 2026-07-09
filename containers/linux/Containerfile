@@ -1,0 +1,14 @@
+FROM registry.access.redhat.com/ubi10/ubi-init
+
+RUN dnf -y install openssh-server openssh-clients sudo python3 python3-pip \
+    ncurses vim-minimal && \
+    dnf clean all
+
+RUN ssh-keygen -A && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    echo 'root:password' | chpasswd && \
+    systemctl enable sshd
+
+EXPOSE 22
+
+CMD ["/sbin/init"]

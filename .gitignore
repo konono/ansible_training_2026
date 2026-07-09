@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Ansible
+*.retry
+
+# Development tools
+.tracecraft/
+.aw.yml
+mise.toml
+
+# Claude Code
+.claude/
+CLAUDE.md
