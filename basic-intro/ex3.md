@@ -372,8 +372,6 @@ node2                      : ok=3    changed=2    unreachable=0    failed=0    s
 node3                      : ok=3    changed=2    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
 ```
 
-最終的なplaybook例は[こちら](./ex3_answer.md)
-
 ---
 
 [前に戻る](./ex2.md) | [次へ進む](../basic-roles/ex4.md)
