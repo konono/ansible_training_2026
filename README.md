@@ -89,6 +89,10 @@ basic修了後、目的に応じて選択してください。
 
 → [containers/](./containers/)
 
+## 用語集
+
+→ [Ansible用語集](./ansible_glossary.md)
+
 ## リファレンス設定
 
 → [example_config/](./homework/example_config/)
