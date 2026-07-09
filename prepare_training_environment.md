@@ -42,6 +42,21 @@ winget install RedHat.Podman
 winget install RedHat.Podman-Desktop
 ```
 
+次に、docker-compose をインストールします。
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\DockerCompose" | Out-Null
+$url = "https://github.com/docker/compose/releases/latest/download/docker-compose-windows-x86_64.exe"
+Invoke-WebRequest -Uri $url -OutFile "$env:LOCALAPPDATA\DockerCompose\docker-compose.exe"
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\DockerCompose", "User")
+```
+
+PATH の変更を反映するため、PowerShell を一度閉じて再度開いてください。
+
+```powershell
+docker-compose version
+```
+
 インストール完了後、ターミナルを再起動してください。
 
 ### Mac の場合
