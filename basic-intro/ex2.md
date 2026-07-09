@@ -6,9 +6,7 @@
 
 Playbookの実装を始める前に、Ansibleの動きを確かめるために、`ansible` コマンド経由でいくつかの**モジュール**を直接実行してみましょう。`ansible` コマンドはソフトウェアとしてのAnsibleと区別するために別名ad-hocコマンドとも呼ばれ、ここでもその呼び名を使っていきます。
 
-モジュールは「よくあるIT運用作業」を部品化したもので、Ansibleからの自動操作は全てこのモジュールを介して行われます。Ansibleには数千のモジュールが組み込みで備わっており、Linux系マシン内の操作のみならず、Windowsやネットワーク機器、クラウドインフラに至るまで、広範囲の操作をモジュールを使って便利に自動化することができます。
-
-- [Ansibleモジュール一覧](https://docs.ansible.com/ansible/latest/collections/index_module.html)
+モジュールは「よくあるIT運用作業」を部品化したもので、Ansibleからの自動操作は全てこのモジュールを介して行われます。Ansibleには数千のモジュールが組み込みで備わっており、Linux系マシン内の操作のみならず、Windowsやネットワーク機器、クラウドインフラに至るまで、広範囲の操作をモジュールを使って便利に自動化することができます。目的に合ったモジュールの探し方や、モジュールの配布単位である **Collection** については、Section 6 で詳しく説明します。
 
 ## Section 1: ping
 
@@ -205,7 +203,119 @@ node3 | CHANGED =>
   * 停止状態: `stopped`、再起動実施: `restarted`
   * `started` と過去分詞になっているのは、「開始する」という操作ではなく「開始済みである」という状態を宣言的に定義しているから
 
-## Section 6: アクセス確認と環境クリーンアップ
+## Section 6: モジュールの探し方とCollection
+
+ここまでの演習で `ping`、`command`、`setup`、`package`、`service` という5つのモジュールを使ってきました。しかし、Ansibleには数千ものモジュールが存在します。ここでは、目的に合ったモジュールを効率的に見つける方法と、モジュールを束ねる仕組みである **Collection** について学びましょう。
+
+### Step 1: ansible-doc でモジュールを探す
+
+`ansible-doc` コマンドはモジュールのドキュメントをターミナル上で参照するためのツールです。Section 2 で少し触れましたが、ここで改めて使い方を整理します。
+
+**利用可能なモジュールの一覧を表示する:**
+
+```bash
+$ ansible-doc -l
+```
+
+大量のモジュールが表示されますので、キーワードで絞り込むと便利です。例えば「ファイル操作に使えるモジュールを探したい」という場合は以下のようにします。
+
+```bash
+$ ansible-doc -l | grep file
+```
+
+```
+ansible.builtin.file          Manage files and file properties
+ansible.builtin.find          Return a list of files based on specific criteria
+ansible.builtin.lineinfile    Manage lines in text files
+ansible.builtin.blockinfile   Insert/update/remove a text block surrounded by marker lines in a file
+...
+```
+
+**特定のモジュールの詳細なドキュメントを表示する:**
+
+```bash
+$ ansible-doc file
+```
+
+ドキュメントにはモジュールの説明、使用可能なパラメータ、使用例などが記載されています。「このモジュールにはどんなオプションがあるのか？」を確認したい場合に非常に便利です。
+
+### Step 2: 公式ドキュメントで探す
+
+Webブラウザで探す場合は、Ansibleの公式ドキュメントにあるモジュール一覧が便利です。
+
+- [Ansibleモジュール一覧（Collection Index）](https://docs.ansible.com/ansible/latest/collections/index_module.html)
+
+カテゴリ別に整理されており、検索機能も備わっています。各モジュールのページには使用例も豊富に掲載されているため、初めて使うモジュールの場合は公式ドキュメントの使用例を参考にするのがおすすめです。
+
+### Step 3: Collectionとは何か？
+
+先ほどの `ansible-doc -l` の出力で、モジュール名の前に `ansible.builtin.` というプレフィックスが付いていたことに気づいたでしょうか。これは **Collection名** です。
+
+**Collection** とは、モジュール・プラグイン・ロールなどをまとめてパッケージ化し、配布するための仕組みです。Ansible 2.9以前はほぼ全てのモジュールがAnsible本体に同梱されていましたが、現在はCollection単位で分離・配布される形になっています。
+
+代表的なCollectionの例を挙げます。
+
+| Collection名 | 内容 |
+|---|---|
+| `ansible.builtin` | Ansibleに組み込みのコアモジュール（`file`、`copy`、`command`、`service` など） |
+| `ansible.posix` | POSIX系OS向けモジュール（`firewalld`、`sysctl` など） |
+| `community.general` | コミュニティが提供する汎用モジュール群 |
+| `amazon.aws` | AWS操作用モジュール（`ec2_instance`、`s3_bucket` など） |
+
+### Step 4: FQCN（完全修飾コレクション名）
+
+Collectionの導入に伴い、モジュールには **FQCN（Fully Qualified Collection Name）** という正式な名前が付けられています。
+
+```
+ansible.builtin.service
+│              │
+│              └─ モジュール名
+└─ Collection名
+```
+
+この演習では短い名前（`service`、`package` など）を使ってきましたが、これは `ansible.builtin` コレクションのモジュールがデフォルトで省略可能だからです。しかし、`ansible.builtin` 以外のCollectionのモジュールを使う場合にはFQCNの指定が必要になります。
+
+公式ドキュメントやroleの実装では、所属Collectionを明示するためにFQCNで記述することが推奨されています。
+
+```yml
+# 短い名前（ansible.builtin のモジュールでは動作する）
+- name: install nginx
+  package:
+    name: nginx
+    state: present
+
+# FQCN（推奨される書き方）
+- name: install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+```
+
+### Step 5: 追加のCollectionをインストールする
+
+Ansibleに同梱されていないCollectionは、`ansible-galaxy` コマンドでインストールすることができます。
+
+```bash
+$ ansible-galaxy collection install amazon.aws
+```
+
+インストール済みのCollectionは以下で確認できます。
+
+```bash
+$ ansible-galaxy collection list
+```
+
+Ansible Galaxyの[Collectionページ](https://galaxy.ansible.com/)でも、利用可能なCollectionを検索することができます。演習6で紹介するroleの共有と同様に、Collectionもコミュニティによって幅広く提供されています。
+
+---
+**NOTE**
+
+「やりたいことがあるけど、どのモジュールを使えばいいかわからない」という場面は多いです。まずは `ansible-doc -l | grep <キーワード>` で心当たりのある単語で検索し、見つからなければ公式ドキュメントで探すという流れを覚えておくとよいでしょう。また、目的に合ったモジュールが `ansible.builtin` に見つからない場合は、追加のCollectionで提供されている可能性があります。
+
+---
+
+
+## Section 7: アクセス確認と環境クリーンアップ
 
 ### Step 1: curlによるアクセス確認
 
@@ -272,7 +382,7 @@ node1 | CHANGED =>
 
 これで環境のクリーンアップが完了しました。
 
-この演習では、ad-hocコマンドを使ってAnsibleの基本的なモジュール操作を体験しました。次の演習では、これらの操作をPlaybookとしてファイルにまとめて管理する方法を学びます。
+この演習では、ad-hocコマンドを使ってAnsibleの基本的なモジュール操作を体験し、モジュールの探し方やCollectionの仕組みについても学びました。次の演習では、これらの操作をPlaybookとしてファイルにまとめて管理する方法を学びます。
 
 ---
 

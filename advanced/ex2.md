@@ -949,6 +949,90 @@ vault_password_file = ~/.vault_password
 
 **Note:** パスワードファイル（`~/.vault_password`）は `.gitignore` に追加し、バージョン管理に含めないでください。
 
+### Step 6: encrypt_string — 値だけを暗号化する（実環境での推奨手法）
+
+ここまでの演習では **ファイル全体を暗号化** する方法を学んできました。しかし、この方法には実運用上の課題があります。
+
+---
+**ファイル全体の暗号化で困ること**
+
+ファイル全体を暗号化すると、中にどんな変数が定義されているかが外からまったくわかりません。
+
+```bash
+$ cat secrets.yml
+$ANSIBLE_VAULT;1.1;AES256
+33393438623665623864336234636430356330636336343932313631353762396534...
+```
+
+この状態では、以下のような問題が起こります。
+
+- 変数の一覧を確認するために毎回 `ansible-vault view` で復号化が必要
+- `grep` で変数名を検索しても暗号文しかヒットしない
+- コードレビューやPRの差分で変更内容がわからない（暗号文の差分になる）
+- どの変数が秘密情報で、どれが普通の設定値かの区別がつかない
+
+---
+
+そこで実環境では、**ファイル全体ではなく、秘密にしたい値だけを個別に暗号化する** `ansible-vault encrypt_string` が広く使われています。
+
+**値の暗号化:**
+
+```bash
+$ ansible-vault encrypt_string 'S3cureP@ssw0rd!' --name 'db_password'
+```
+
+```
+New Vault password: （パスワードを入力）
+Confirm New Vault password: （同じパスワードを再入力）
+db_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          61326634353034613230626431653436306466613061393637636533303064653536356536396265
+          3536613832643432383038393038393764353636623436640a343935343365303962343837383362
+          ...
+Encryption successful
+```
+
+パスワードファイルを指定する場合は `--vault-password-file` オプションが使えます。
+
+```bash
+$ ansible-vault encrypt_string 'S3cureP@ssw0rd!' --name 'db_password' --vault-password-file ~/.vault_password
+```
+
+**暗号化した値を変数ファイルに組み込む:**
+
+`encrypt_string` の出力をそのまま変数ファイルに貼り付けます。秘密情報だけが暗号化され、それ以外の変数は平文のまま読める状態になります。
+
+```yaml
+---
+# 秘密でない設定値はそのまま読める
+db_host: "172.20.0.20"
+db_port: 5432
+db_name: "training_db"
+db_user: "app_user"
+
+# パスワードだけが暗号化されている
+db_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          61326634353034613230626431653436306466613061393637636533303064653536356536396265
+          3536613832643432383038393038393764353636623436640a343935343365303962343837383362
+          ...
+```
+
+この形であれば、**ファイルを開くだけで変数名の一覧と構成が把握でき、`grep` による検索も機能し、コードレビュー時の差分も理解しやすくなります。** 暗号化されているのはパスワードの値だけなので、「何が定義されているか」と「何が秘密なのか」が一目瞭然です。
+
+Playbookからの使い方はファイル全体を暗号化した場合と同じで、`vars_files` や `include_vars` で読み込むだけです。`--ask-vault-pass` や `--vault-password-file` の指定も同様に必要です。
+
+```bash
+$ ansible-playbook vault_playbook.yml --vault-password-file ~/.vault_password
+```
+
+---
+**NOTE**
+
+実環境では「**ファイル全体の暗号化は極力避け、`encrypt_string` で値だけを暗号化する**」というのが広く推奨されているプラクティスです。ファイル全体を暗号化するのは、ファイル内の全ての内容が秘密である場合（例: 秘密鍵ファイルそのもの）に限定するのが良いでしょう。
+
+---
+
 ---
 
 ## Section 5: 実践演習 — ファイル操作と秘密情報の統合
@@ -1172,6 +1256,7 @@ node3                      : ok=11   changed=5    unreachable=0    failed=0    s
 | `ansible-vault create` | 暗号化された変数ファイルを新規作成する |
 | `ansible-vault encrypt/decrypt` | 既存ファイルの暗号化/復号化を行う |
 | `ansible-vault view/edit` | 暗号化ファイルの閲覧/編集を行う |
+| `ansible-vault encrypt_string` | 個別の値だけを暗号化する（実環境推奨） |
 | `--ask-vault-pass` | 実行時にVaultパスワードを対話的に入力する |
 | `--vault-password-file` | パスワードファイルを指定して自動化する |
 
