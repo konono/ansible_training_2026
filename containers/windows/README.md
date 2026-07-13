@@ -6,13 +6,14 @@
 
 ## 制約事項
 
-| 項目 | 要件 |
-|---|---|
+| 項目     | 要件                                                |
+| ------ | ------------------------------------------------- |
 | ホスト OS | **Windows 11 のみ**（nested virtualization + KVM 必須） |
-| macOS | **非対応**（KVM を提供できないため動作しません） |
-| RAM | 最低 4GB（Windows VM に割り当て） |
-| ディスク | 最低 64GB の空き容量 |
-| 仮想化 | BIOS で Intel VT-x / AMD SVM が有効であること |
+| macOS  | **非対応**（KVM を提供できないため動作しません）                      |
+| RAM    | 最低 4GB（Windows VM に割り当て）                          |
+| ディスク   | 最低 64GB の空き容量                                     |
+| 仮想化    | BIOS で Intel VT-x / AMD SVM が有効であること              |
+| WSL2    | WSL2(Windows Subsystem for Linux 2) がインストールされていること  |
 
 ## セットアップ手順
 
@@ -26,7 +27,7 @@
 docker-compose up -d winnode
 ```
 
-Windows のインストールが自動で開始されます（約10〜20分）。
+Windows のインストールが自動で開始されます（約10〜20分）。環境、スペックによってはより時間がかかる場合があります。
 
 ### 3. インストール状況の確認
 
@@ -43,8 +44,10 @@ curl http://172.20.0.20:5985/wsman
 
 ### 5. Ansible からの接続テスト
 
+[応用演習 11 - Windowsノードの管理](../advanced/ex11.md)のSection1の手順を実施して、ansibleコマンドを実行します。
+
 ```bash
-ansible winnode -m win_ping
+ansible winnode -m ansible.windows.win_ping
 ```
 
 ## インベントリ設定
@@ -60,7 +63,7 @@ all:
           ansible_password: "AnsiblePass123!"
           ansible_connection: winrm
           ansible_port: 5985
-          ansible_winrm_transport: basic
+          ansible_winrm_transport: ntlm
           ansible_winrm_server_cert_validation: ignore
 ```
 

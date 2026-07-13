@@ -73,6 +73,7 @@ services:
   #     USERNAME: "ansible"
   #     PASSWORD: "AnsiblePass123!"
   #     LANGUAGE: "Japanese"
+  #     USER_PORTS: "5985,5986"
   #   devices:
   #     - /dev/kvm
   #     - /dev/net/tun
@@ -80,8 +81,8 @@ services:
   #     - NET_ADMIN
   #   ports:
   #     - 8006:8006
-  #     - 3389:3389/tcp
-  #     - 3389:3389/udp
+  #     - 13389:3389/tcp
+  #     - 13389:3389/udp
   #     - 5985:5985
   #     - 5986:5986
   #   volumes:
