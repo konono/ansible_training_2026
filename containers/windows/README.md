@@ -6,14 +6,14 @@
 
 ## 制約事項
 
-| 項目     | 要件                                                |
-| ------ | ------------------------------------------------- |
+| 項目 | 要件 |
+|---|---|
 | ホスト OS | **Windows 11 のみ**（nested virtualization + KVM 必須） |
-| macOS  | **非対応**（KVM を提供できないため動作しません）                      |
-| RAM    | 最低 4GB（Windows VM に割り当て）                          |
-| ディスク   | 最低 64GB の空き容量                                     |
-| 仮想化    | BIOS で Intel VT-x / AMD SVM が有効であること              |
-| WSL2    | WSL2(Windows Subsystem for Linux 2) がインストールされていること  |
+| macOS | **非対応**（KVM を提供できないため動作しません） |
+| RAM | 最低 4GB（Windows VM に割り当て） |
+| ディスク | 最低 64GB の空き容量 |
+| 仮想化 | BIOS で Intel VT-x / AMD SVM が有効であること |
+| WSL2 | WSL2(Windows Subsystem for Linux 2) がインストールされていること |
 
 ## セットアップ手順
 
