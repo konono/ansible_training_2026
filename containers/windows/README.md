@@ -91,3 +91,9 @@ qemu-system-x86_64: error: KVM is not available
 - Windows のインストールが完了しているか確認（ブラウザで `http://localhost:8006`）
 - ファイアウォールで port 5985 が開いているか確認
 - `install.bat` が正常に実行されたか確認（RDP でログインして `C:\OEM\install.bat` を手動実行）
+
+### OS イメージのダウンロードに失敗する場合
+
+コンテナ起動時に Windows の ISO イメージを自動ダウンロードしますが、環境によってはダウンロード中にエラーが発生する場合があります。その場合は、事前に ISO イメージ（Windows Server 2022、約 5GB）を手動でダウンロードし、`containers/windows/storage/` に配置してください。
+
+詳細は dockur/windows の FAQ を参照してください: [How do I install a custom image?](https://github.com/dockur/windows#how-do-i-install-a-custom-image)
