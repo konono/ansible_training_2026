@@ -100,7 +100,9 @@ qemu-system-x86_64: error: KVM is not available
 
 #### 手順
 
-1. [Microsoft Evaluation Center](https://www.microsoft.com/ja-jp/evalcenter/evaluate-windows-server-2022) から Windows Server 2022 の ISO（約 5GB）をダウンロードします
+1. 以下のリンクから Windows Server 2022 の ISO（約 5GB）をダウンロードします
+
+   [Windows Server 2022 ISO ダウンロード](https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x411&culture=ja-jp&country=JP)
 
 2. ダウンロードした ISO を `containers/windows/storage/` に配置します
 
