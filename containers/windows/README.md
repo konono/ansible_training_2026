@@ -94,6 +94,35 @@ qemu-system-x86_64: error: KVM is not available
 
 ### OS イメージのダウンロードに失敗する場合
 
-コンテナ起動時に Windows の ISO イメージを自動ダウンロードしますが、環境によってはダウンロード中にエラーが発生する場合があります。その場合は、事前に ISO イメージ（Windows Server 2022、約 5GB）を手動でダウンロードし、`containers/windows/storage/` に配置してください。
+コンテナ起動時に Windows の ISO イメージを自動ダウンロードしますが、環境やネットワーク状況によってはダウンロード・展開中にエラーが発生する場合があります。
 
-詳細は dockur/windows の FAQ を参照してください: [How do I install a custom image?](https://github.com/dockur/windows#how-do-i-install-a-custom-image)
+その場合は、事前に ISO イメージを手動でダウンロードし、ローカルマウントで回避してください。
+
+#### 手順
+
+1. [Microsoft Evaluation Center](https://www.microsoft.com/ja-jp/evalcenter/evaluate-windows-server-2022) から Windows Server 2022 の ISO（約 5GB）をダウンロードします
+
+2. ダウンロードした ISO を `containers/windows/storage/` に配置します
+
+   ```bash
+   cp /path/to/your-downloaded.iso containers/windows/storage/
+   ```
+
+3. `docker-compose.yml` の winnode セクションに、ISO ファイルをコンテナ内の `/custom.iso` へマウントするボリュームを追加します
+
+   ```yaml
+   volumes:
+     - ./windows/storage:/storage
+     - ./windows/oem:/oem
+     - ./windows/storage/your-downloaded.iso:/custom.iso   # 追加
+   ```
+
+   `/custom.iso` がマウントされると、`VERSION` 環境変数の値に関わらずローカルの ISO が優先的に使用されます。
+
+4. コンテナを再作成して起動します
+
+   ```bash
+   docker-compose up -d winnode
+   ```
+
+参考: [How do I install a custom image? — dockur/windows](https://github.com/dockur/windows#how-do-i-install-a-custom-image)
