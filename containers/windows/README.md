@@ -107,7 +107,7 @@ qemu-system-x86_64: error: KVM is not available
 2. ダウンロードした ISO を `containers/windows/storage/` に配置します
 
    ```bash
-   cp /path/to/your-downloaded.iso containers/windows/storage/
+   cp /path/to/SERVER_EVAL_x64FRE_ja-jp.iso containers/windows/storage/
    ```
 
 3. `docker-compose.yml` の winnode セクションに、ISO ファイルをコンテナ内の `/custom.iso` へマウントするボリュームを追加します
@@ -116,7 +116,7 @@ qemu-system-x86_64: error: KVM is not available
    volumes:
      - ./windows/storage:/storage
      - ./windows/oem:/oem
-     - ./windows/storage/your-downloaded.iso:/custom.iso   # 追加
+     - ./windows/storage/SERVER_EVAL_x64FRE_ja-jp.iso:/custom.iso   # 追加
    ```
 
    `/custom.iso` がマウントされると、`VERSION` 環境変数の値に関わらずローカルの ISO が優先的に使用されます。
