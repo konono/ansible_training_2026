@@ -13,6 +13,7 @@
 | RAM | 最低 4GB（Windows VM に割り当て） |
 | ディスク | 最低 64GB の空き容量 |
 | 仮想化 | BIOS で Intel VT-x / AMD SVM が有効であること |
+| WSL2 | WSL2(Windows Subsystem for Linux 2) がインストールされていること |
 
 ## セットアップ手順
 
@@ -26,7 +27,7 @@
 docker-compose up -d winnode
 ```
 
-Windows のインストールが自動で開始されます（約10〜20分）。
+Windows のインストールが自動で開始されます（約10〜20分）。環境、スペックによってはより時間がかかる場合があります。
 
 ### 3. インストール状況の確認
 
@@ -43,8 +44,10 @@ curl http://172.20.0.20:5985/wsman
 
 ### 5. Ansible からの接続テスト
 
+[応用演習 11 - Windowsノードの管理](../advanced/ex11.md)のSection1の手順を実施して、ansibleコマンドを実行します。
+
 ```bash
-ansible winnode -m win_ping
+ansible winnode -m ansible.windows.win_ping
 ```
 
 ## インベントリ設定
@@ -60,7 +63,7 @@ all:
           ansible_password: "AnsiblePass123!"
           ansible_connection: winrm
           ansible_port: 5985
-          ansible_winrm_transport: basic
+          ansible_winrm_transport: ntlm
           ansible_winrm_server_cert_validation: ignore
 ```
 
@@ -88,3 +91,40 @@ qemu-system-x86_64: error: KVM is not available
 - Windows のインストールが完了しているか確認（ブラウザで `http://localhost:8006`）
 - ファイアウォールで port 5985 が開いているか確認
 - `install.bat` が正常に実行されたか確認（RDP でログインして `C:\OEM\install.bat` を手動実行）
+
+### OS イメージのダウンロードに失敗する場合
+
+コンテナ起動時に Windows の ISO イメージを自動ダウンロードしますが、環境やネットワーク状況によってはダウンロード・展開中にエラーが発生する場合があります。
+
+その場合は、事前に ISO イメージを手動でダウンロードし、ローカルマウントで回避してください。
+
+#### 手順
+
+1. 以下のリンクから Windows Server 2022 の ISO（約 5GB）をダウンロードします
+
+   [Windows Server 2022 ISO ダウンロード](https://www.microsoft.com/ja-jp/evalcenter/download-windows-server-2022)
+
+2. ダウンロードした ISO を `containers/windows/storage/` に配置します
+
+   ```bash
+   cp /path/to/SERVER_EVAL_x64FRE_ja-jp.iso containers/windows/storage/
+   ```
+
+3. `docker-compose.yml` の winnode セクションに、ISO ファイルをコンテナ内の `/custom.iso` へマウントするボリュームを追加します
+
+   ```yaml
+   volumes:
+     - ./windows/storage:/storage
+     - ./windows/oem:/oem
+     - ./windows/storage/SERVER_EVAL_x64FRE_ja-jp.iso:/custom.iso   # 追加
+   ```
+
+   `/custom.iso` がマウントされると、`VERSION` 環境変数の値に関わらずローカルの ISO が優先的に使用されます。
+
+4. コンテナを再作成して起動します
+
+   ```bash
+   docker-compose up -d winnode
+   ```
+
+参考: [How do I install a custom image? — dockur/windows](https://github.com/dockur/windows#how-do-i-install-a-custom-image)
