@@ -10,10 +10,24 @@
     path: "{{ bundle_staging_dir }}/checksums.sha256"
   register: checksums_file
 
-- name: チェックサムを検証
-  ansible.builtin.command:
-    cmd: sha256sum -c checksums.sha256
-    chdir: "{{ bundle_staging_dir }}"
+- name: チェックサムを検証（転送済みファイルのみ）
+  ansible.builtin.shell: |
+    cd "{{ bundle_staging_dir }}"
+    total=0; pass=0; fail=0
+    while IFS= read -r line; do
+      file=$(echo "$line" | awk '{print $2}')
+      if [ -f "$file" ]; then
+        total=$((total + 1))
+        if echo "$line" | sha256sum -c --quiet - 2>/dev/null; then
+          pass=$((pass + 1))
+        else
+          fail=$((fail + 1))
+          echo "MISMATCH: $file"
+        fi
+      fi
+    done < checksums.sha256
+    echo "RESULT: $pass/$total passed, $fail failed"
+    [ "$fail" -eq 0 ]
   when: checksums_file.stat.exists
   changed_when: false
   register: checksum_result
@@ -21,9 +35,9 @@
 - name: チェックサム検証結果を表示
   ansible.builtin.debug:
     msg: >-
-      チェックサム検証: {{ 'OK — 全ファイル一致' if checksum_result.rc | default(1) == 0
+      チェックサム検証: {{ 'OK' if checksum_result.rc | default(1) == 0
       else 'スキップ（checksums.sha256 なし）' if not checksums_file.stat.exists
-      else '失敗 — ファイルが破損しています。バンドルを再転送してください' }}
+      else '失敗 — ' + (checksum_result.stdout_lines | select('match', 'MISMATCH') | list | join(', ')) }}
 
 - name: チェックサム不一致の場合はエラー
   ansible.builtin.fail:

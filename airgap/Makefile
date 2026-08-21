@@ -119,12 +119,12 @@ destroy-vms: destroy-rhel-vms destroy-win-vm ## 全 VM を削除
 
 transfer-rhel: ## RHEL VM にリソースを転送
 	@echo "=== ディスク拡張 ==="
-	@ansible -i $(INVENTORY) repo-server -m shell \
-		-a 'TMPDIR=/dev/shm growpart /dev/vda 3 2>/dev/null; xfs_growfs / 2>/dev/null; df -h / | tail -1' \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep '/dev/vda'
-	@ansible -i $(INVENTORY) rhel-target -m shell \
-		-a 'TMPDIR=/dev/shm growpart /dev/vda 3 2>/dev/null; xfs_growfs / 2>/dev/null; df -h / | tail -1' \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep '/dev/vda'
+	@for host in repo-server rhel-target; do \
+		echo "  $$host:"; \
+		ansible -i $(INVENTORY) $$host -m shell \
+			-a 'TMPDIR=/dev/shm growpart /dev/vda 3 2>/dev/null || true; xfs_growfs / 2>/dev/null || true; avail=$$(df --output=avail / | tail -1); echo "AVAIL_KB:$$avail"; [ "$$avail" -gt 10000000 ] && echo "DISK_OK" || echo "DISK_LOW"' \
+			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'AVAIL_KB|DISK_OK|DISK_LOW'; \
+	done
 	@echo "=== DVD ISO → repo-server ==="
 	@ansible -i $(INVENTORY) repo-server -m copy \
 		-a "src=$(BUNDLE)/iso/rhel-10.2-x86_64-dvd.iso dest=/opt/rhel10.iso" \
@@ -169,20 +169,20 @@ transfer-win: ## Windows VM にリソースを転送
 	@for f in wsl.msi podman-setup.exe docker-compose-windows-x86_64.exe podman-machine-wsl.ociarchive; do \
 		echo "  $$f..."; \
 		ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_copy \
-			-a "src=$(BUNDLE)/binaries/$$f dest=C:/airgap-bundle/$$f" 2>&1 | grep -E 'changed|size'; \
+			-a "src=$(BUNDLE)/binaries/$$f dest=C:/airgap-bundle/$$f" 2>&1 | grep -E 'changed|ok'; \
 	done
 	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_file \
 		-a 'path=C:\airgap-bundle\container-images state=directory' 2>&1 | tail -1
 	@for f in training-controller.tar training-linux-node.tar; do \
 		echo "  $$f..."; \
 		ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_copy \
-			-a "src=$(BUNDLE)/container-images/$$f dest=C:/airgap-bundle/container-images/$$f" 2>&1 | grep -E 'changed|size'; \
+			-a "src=$(BUNDLE)/container-images/$$f dest=C:/airgap-bundle/container-images/$$f" 2>&1 | grep -E 'changed|ok'; \
 	done
 	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_file \
 		-a 'path=C:\airgap-bundle\training-materials state=directory' 2>&1 | tail -1
 	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_copy \
 		-a "src=$(BUNDLE)/training-materials/ansible_training_2026.tar.gz dest=C:/airgap-bundle/training-materials/ansible_training_2026.tar.gz" \
-		2>&1 | grep -E 'changed|size'
+		2>&1 | grep -E 'changed|ok'
 	@echo "=== 転送完了 ==="
 
 # --- デプロイ ---
