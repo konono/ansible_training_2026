@@ -1,4 +1,13 @@
 ---
+- name: リポジトリサーバーが設定されていることを確認
+  ansible.builtin.assert:
+    that:
+      - repo_server_ip | default('') | length > 0
+    fail_msg: >-
+      repo_server_ip が未設定です。
+      統合インベントリ (inventory/hosts.yml) に repo_server グループを含めるか、
+      -e "repo_server_ip=<IP>" で指定してください。
+
 - name: 研修用ディレクトリを作成
   ansible.builtin.file:
     path: "{{ training_base_dir }}"

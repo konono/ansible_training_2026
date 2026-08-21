@@ -200,12 +200,21 @@ deploy-all: deploy-rhel deploy-win ## 全環境をセットアップ
 
 verify-airgap: ## airgap 状態を検証
 	@echo "=== Airgap 検証 ==="
-	@ansible -i $(INVENTORY) repo-server -m command -a 'ping -c1 -W2 8.8.8.8' \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'unreachable|FAILED' && echo "  repo-server: AIRGAP OK" || echo "  repo-server: NOT AIRGAP"
-	@ansible -i $(INVENTORY) rhel-target -m command -a 'ping -c1 -W2 8.8.8.8' \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'unreachable|FAILED' && echo "  rhel-target: AIRGAP OK" || echo "  rhel-target: NOT AIRGAP"
-	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_shell \
-		-a 'ping -n 1 -w 2000 8.8.8.8 | Select-String "loss"' 2>&1 | grep '100%' && echo "  win11-airgap: AIRGAP OK" || echo "  win11-airgap: NOT AIRGAP"
+	@echo -n "  repo-server:  "; \
+		ansible -i $(INVENTORY) repo-server -m command -a 'ping -c1 -W2 8.8.8.8' \
+			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -q 'unreachable\|FAILED' \
+			&& echo "✓ AIRGAP (インターネット到達不可)" \
+			|| echo "✗ NOT AIRGAP (インターネットに到達可能 — 隔離されていません)"
+	@echo -n "  rhel-target:  "; \
+		ansible -i $(INVENTORY) rhel-target -m command -a 'ping -c1 -W2 8.8.8.8' \
+			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -q 'unreachable\|FAILED' \
+			&& echo "✓ AIRGAP (インターネット到達不可)" \
+			|| echo "✗ NOT AIRGAP (インターネットに到達可能 — 隔離されていません)"
+	@echo -n "  win11-airgap: "; \
+		ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_shell \
+			-a 'ping -n 1 -w 2000 8.8.8.8 | Select-String "loss"' 2>&1 | grep -q '100%' \
+			&& echo "✓ AIRGAP (インターネット到達不可)" \
+			|| echo "✗ NOT AIRGAP (インターネットに到達可能 — 隔離されていません)"
 
 verify-rhel: ## RHEL 研修環境の動作確認
 	@echo "=== RHEL 研修環境検証 ==="
