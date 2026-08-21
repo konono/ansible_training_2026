@@ -56,7 +56,7 @@ setup-rhel-vms: setup-network ## RHEL VM (repo-server + rhel-target) を作成�
 			--root-password password:password --hostname $$vm \
 			--run-command 'sed -i "s/#PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config' \
 			--run-command 'systemctl enable sshd' \
-			$$EXTRA --selinux-relabel 2>&1 | grep Finishing; \
+			$$EXTRA --selinux-relabel 2>&1 | grep Finishing || { echo "ERROR: virt-customize failed for $$vm"; exit 1; }; \
 		sudo qemu-img resize /tmp/$$vm.qcow2 20G 2>&1; \
 		sudo mv /tmp/$$vm.qcow2 $(IMG_DIR)/$$vm.qcow2; \
 	done
@@ -148,16 +148,16 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	done
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/container-images/training-controller.tar dest=/opt/airgap-bundle/container-images/" \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep changed
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/container-images/training-linux-node.tar dest=/opt/airgap-bundle/container-images/" \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep changed
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/binaries/docker-compose-linux-x86_64 dest=/opt/airgap-bundle/binaries/ mode=0755" \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep changed
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/training-materials/ansible_training_2026.tar.gz dest=/opt/airgap-bundle/training-materials/" \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep changed
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@echo "=== 転送完了 ==="
 
 transfer-win: ## Windows VM にリソースを転送

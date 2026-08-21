@@ -76,6 +76,17 @@
       register: win_containers
       changed_when: false
 
+    - name: 研修コンテナが全て起動しているか確認
+      ansible.builtin.assert:
+        that:
+          - "'controller' in win_containers.stdout"
+          - "'node1' in win_containers.stdout"
+          - "'node2' in win_containers.stdout"
+          - "'node3' in win_containers.stdout"
+          - "'lb' in win_containers.stdout"
+        fail_msg: "一部の研修コンテナが起動していません: {{ win_containers.stdout }}"
+        success_msg: "全てのコンテナ (controller, node1-3, lb) が起動しています"
+
     - name: コンテナ状態を表示
       ansible.builtin.debug:
         msg: "{{ win_containers.stdout_lines }}"

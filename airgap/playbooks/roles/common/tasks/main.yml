@@ -24,3 +24,10 @@
       チェックサム検証: {{ 'OK — 全ファイル一致' if checksum_result.rc | default(1) == 0
       else 'スキップ（checksums.sha256 なし）' if not checksums_file.stat.exists
       else '失敗 — ファイルが破損しています。バンドルを再転送してください' }}
+
+- name: チェックサム不一致の場合はエラー
+  ansible.builtin.fail:
+    msg: "チェックサム検証に失敗しました。バンドルファイルが破損しています。再転送してください。"
+  when:
+    - checksums_file.stat.exists
+    - checksum_result.rc | default(1) != 0
