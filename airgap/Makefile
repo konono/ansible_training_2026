@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := /bin/bash -o pipefail
 .DEFAULT_GOAL := help
 
 BUNDLE := offline-resources
@@ -128,7 +128,7 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	@echo "=== DVD ISO → repo-server ==="
 	@ansible -i $(INVENTORY) repo-server -m copy \
 		-a "src=$(BUNDLE)/iso/rhel-10.2-x86_64-dvd.iso dest=/opt/rhel10.iso" \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|size'
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@echo "=== Packages → repo-server ==="
 	@ansible -i $(INVENTORY) repo-server -m file \
 		-a "path=/opt/airgap-bundle/packages state=directory" \
@@ -136,7 +136,7 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	@if [ -d "$(BUNDLE)/packages" ] && [ -n "$$(ls -A $(BUNDLE)/packages/ 2>/dev/null)" ]; then \
 		ansible -i $(INVENTORY) repo-server -m copy \
 			-a "src=$(BUNDLE)/packages/ dest=/opt/airgap-bundle/packages/" \
-			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|size'; \
+			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'; \
 	else echo "  packages/ is empty, skipping"; fi
 	@echo "=== Bundle → rhel-target ==="
 	@ansible -i $(INVENTORY) rhel-target -m file \
@@ -157,6 +157,10 @@ transfer-rhel: ## RHEL VM にリソースを転送
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/training-materials/ansible_training_2026.tar.gz dest=/opt/airgap-bundle/training-materials/" \
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
+	@echo "=== checksums.sha256 → rhel-target ==="
+	@ansible -i $(INVENTORY) rhel-target -m copy \
+		-a "src=$(BUNDLE)/checksums.sha256 dest=/opt/airgap-bundle/checksums.sha256" \
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@echo "=== 転送完了 ==="
 
@@ -224,8 +228,7 @@ verify-rhel: ## RHEL 研修環境の動作確認
 
 verify-win: ## Windows 研修環境の動作確認
 	@echo "=== Windows 研修環境検証 ==="
-	@ansible -i $(INVENTORY) win-airgap-vm -m raw \
-		-a 'podman --remote ps' 2>&1 | grep -E 'controller|node'
+	ansible-playbook -i $(INVENTORY) playbooks/verify.yml --limit windows
 
 # --- 一括操作 ---
 

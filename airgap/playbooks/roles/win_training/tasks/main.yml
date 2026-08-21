@@ -79,14 +79,15 @@
   changed_when: "'CLEANED' in container_clean.stdout | default('')"
   failed_when: false
 
-- name: podman ネットワークを作成
-  ansible.builtin.raw: >
-    podman --remote network rm ansible_net 2>&1;
-    podman --remote network rm containers_ansible_net 2>&1;
-    podman --remote network create --subnet {{ container_network_subnet }} ansible_net 2>&1
-  register: net_create
-  changed_when: true
+- name: 既存ネットワークを削除
+  ansible.builtin.raw: podman --remote network rm ansible_net 2>&1; podman --remote network rm containers_ansible_net 2>&1; true
+  changed_when: false
   failed_when: false
+
+- name: podman ネットワークを作成
+  ansible.builtin.raw: podman --remote network create --subnet {{ container_network_subnet }} ansible_net 2>&1
+  register: net_create
+  failed_when: net_create.rc != 0 and 'already exists' not in net_create.stdout | default('')
 
 - name: controller コンテナを起動
   ansible.builtin.raw: >
