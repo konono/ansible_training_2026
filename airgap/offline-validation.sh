@@ -79,7 +79,15 @@ echo ""
 
 # --- Windows 演習用パッケージ ---
 echo "■ Windows 演習用パッケージ (packages/)"
-check_file "packages/7z2301-x64.msi"   "7-Zip MSI"           "false"
+if compgen -G "$BUNDLE_DIR/packages/7z*-x64.msi" > /dev/null 2>&1; then
+    local_7z=$(ls "$BUNDLE_DIR/packages"/7z*-x64.msi 2>/dev/null | head -1)
+    size=$(du -sh "$local_7z" 2>/dev/null | awk '{print $1}')
+    echo -e "  ${GREEN}[OK]${NC} 7-Zip MSI ($size)"
+    ((PASS++)) || true
+else
+    echo -e "  ${YELLOW}[--]${NC} 7-Zip MSI — packages/7z*-x64.msi (オプション、なくても動作可)"
+    ((WARN++)) || true
+fi
 check_file "packages/chocolatey.nupkg" "Chocolatey nupkg"    "false"
 echo ""
 

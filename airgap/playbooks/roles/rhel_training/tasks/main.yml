@@ -97,11 +97,13 @@
     - advanced
     - homework
 
-- name: 起動済みコンテナ数を確認
-  ansible.builtin.shell: podman ps --format json | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"
-  register: running_count
+- name: 研修コンテナの起動状態を確認
+  ansible.builtin.shell: |
+    for name in controller node1 node2 node3 lb; do
+      podman ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -q "^${name}$" || echo "missing:${name}"
+    done
+  register: container_check
   changed_when: false
-  failed_when: false
 
 - name: 研修コンテナを起動
   ansible.builtin.command:
@@ -110,7 +112,7 @@
   environment:
     DOCKER_HOST: "unix:///run/podman/podman.sock"
   register: compose_up
-  when: (running_count.stdout | default('0') | int) < 5
+  when: "'missing' in container_check.stdout"
   changed_when: compose_up.rc == 0
 
 - name: compose 起動結果を表示
@@ -134,7 +136,16 @@
     msg: "{{ container_status.stdout_lines }}"
 
 - name: コンテナ内リポジトリ設定を確認
-  ansible.builtin.shell: podman exec node1 cat /etc/yum.repos.d/airgap-baseos.repo 2>/dev/null
+  ansible.builtin.shell: |
+    needs_update=false
+    for c in controller node1 node2 node3 lb; do
+      content=$(podman exec $c cat /etc/yum.repos.d/airgap-baseos.repo 2>/dev/null)
+      if ! echo "$content" | grep -q "{{ repo_server_ip }}"; then
+        needs_update=true
+        break
+      fi
+    done
+    echo $needs_update
   register: container_repo_check
   changed_when: false
   failed_when: false
@@ -161,7 +172,7 @@
         dnf clean all >/dev/null 2>&1
       '
     done
-  when: "'airgap-baseos' not in container_repo_check.stdout | default('')"
+  when: "'true' in container_repo_check.stdout | default('true')"
   changed_when: true
 
 - name: コンテナからリポジトリサーバーへの疎通確認

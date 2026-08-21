@@ -9,7 +9,7 @@
     - ../group_vars/windows.yml
 
   pre_tasks:
-    - name: WinRM 接続確認
+    - name: SSH 接続確認
       ansible.windows.win_ping:
 
     - name: OS 情報を取得

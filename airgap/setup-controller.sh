@@ -152,7 +152,6 @@ if [[ -d "$COLLECTIONS_DIR" ]]; then
     for col in ansible-posix ansible-windows community-general community-windows; do
         tarball=$(ls "$COLLECTIONS_DIR"/${col}-*.tar.gz 2>/dev/null | head -1)
         if [[ -n "$tarball" ]]; then
-            name=$(echo "$col" | sed 's/-/./g' | sed 's/_/./g' | sed 's/v1/v1/')
             if ansible-galaxy collection list 2>/dev/null | grep -q "${col//-/.}"; then
                 log_info "$col: インストール済み"
             else
