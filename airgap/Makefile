@@ -16,7 +16,7 @@ WIN_MAC  := 52:54:00:AA:BB:20
         transfer-rhel transfer-win \
         deploy-repo deploy-rhel deploy-win deploy-all \
         verify-airgap verify-rhel verify-win \
-        test clean
+        test clean full-test
 
 help: ## ヘルプを表示
 	@echo "=== Airgap 研修環境管理 ==="
@@ -129,6 +129,15 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	@ansible -i $(INVENTORY) repo-server -m copy \
 		-a "src=$(BUNDLE)/iso/rhel-10.2-x86_64-dvd.iso dest=/opt/rhel10.iso" \
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|size'
+	@echo "=== Packages → repo-server ==="
+	@ansible -i $(INVENTORY) repo-server -m file \
+		-a "path=/opt/airgap-bundle/packages state=directory" \
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | tail -1
+	@if [ -d "$(BUNDLE)/packages" ] && [ -n "$$(ls -A $(BUNDLE)/packages/ 2>/dev/null)" ]; then \
+		ansible -i $(INVENTORY) repo-server -m copy \
+			-a "src=$(BUNDLE)/packages/ dest=/opt/airgap-bundle/packages/" \
+			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|size'; \
+	else echo "  packages/ is empty, skipping"; fi
 	@echo "=== Bundle → rhel-target ==="
 	@ansible -i $(INVENTORY) rhel-target -m file \
 		-a 'path=/opt/airgap-bundle state=directory' -e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | tail -1

@@ -44,7 +44,7 @@
         - 14
       register: ping_results
       changed_when: false
-      failed_when: ping_results.rc not in [0, 127]
+      failed_when: ping_results.rc != 0
 
     - name: ノード接続結果を表示
       ansible.builtin.debug:

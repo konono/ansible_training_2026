@@ -147,8 +147,12 @@
 
 - name: podman machine を初期化（バンドル済みイメージ使用）
   ansible.windows.win_shell: |
-    podman machine init --image-path "{{ win_podman_machine_image }}" 2>&1
-    exit 0
+    $result = podman machine init --image-path "{{ win_podman_machine_image }}" 2>&1
+    if ($LASTEXITCODE -ne 0 -and $result -notmatch "already exists") {
+      Write-Output $result
+      exit $LASTEXITCODE
+    }
+    Write-Output $result
   async: 900
   poll: 30
   register: machine_init

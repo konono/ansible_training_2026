@@ -21,6 +21,11 @@ echo "このスクリプトは ansible-playbook を実行するマシンを"
 echo "airgap 環境でセットアップします。"
 echo ""
 
+if [[ $EUID -ne 0 ]]; then
+    log_error "root 権限が必要です。sudo ./setup-controller.sh で実行してください"
+    exit 1
+fi
+
 # --- Step 1: DVD ISO からローカルリポジトリを設定 ---
 log_info "Step 1: DVD ISO からローカルリポジトリを設定"
 
@@ -144,7 +149,7 @@ echo ""
 log_info "Step 5: Ansible コレクションのインストール"
 COLLECTIONS_DIR="$BUNDLE_DIR/ansible-collections"
 if [[ -d "$COLLECTIONS_DIR" ]]; then
-    for col in ansible-posix ansible-windows community-general community-windows community-library_inventory_filtering_v1; do
+    for col in ansible-posix ansible-windows community-general community-windows; do
         tarball=$(ls "$COLLECTIONS_DIR"/${col}-*.tar.gz 2>/dev/null | head -1)
         if [[ -n "$tarball" ]]; then
             name=$(echo "$col" | sed 's/-/./g' | sed 's/_/./g' | sed 's/v1/v1/')
