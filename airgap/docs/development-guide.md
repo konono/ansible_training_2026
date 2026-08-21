@@ -1,0 +1,203 @@
+# 開発者ガイド — テスト・アーキテクチャ・改修
+
+airgap ツールキットの開発・テスト・改修に関するガイドです。
+
+## アーキテクチャ
+
+### コンポーネント構成
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ airgap-training ネットワーク (192.168.100.0/24, forward なし)    │
+│                                                                │
+│  repo-server (.5)          rhel-target (.10)                   │
+│  ┌──────────────┐          ┌─────────────────────────────┐     │
+│  │ DVD ISO      │          │ podman + docker-compose     │     │
+│  │  ↓ mount     │  HTTP    │                             │     │
+│  │ nginx        │◄─────── │ ┌─── ansible_net ─────────┐ │     │
+│  │  /repo/      │          │ │ controller (.10) :2220  │ │     │
+│  │  /packages/  │          │ │ node1 (.11)             │ │     │
+│  └──────────────┘          │ │ node2 (.12)             │ │     │
+│                            │ │ node3 (.13)             │ │     │
+│  win11-target (.20)        │ │ lb (.14)                │ │     │
+│  ┌──────────────┐          │ └─────────────────────────┘ │     │
+│  │ WSL2+Podman  │          └─────────────────────────────┘     │
+│  │ (SSH接続)    │                                              │
+│  └──────────────┘                                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### ロール構成
+
+| ロール | 対象 | 機能 |
+|---|---|---|
+| `setup_rhel_image_repository` | repo-server | DVD ISO マウント + yum repo 定義 |
+| `create_local_repository` | repo-server | nginx HTTP 配信 + `/packages/` |
+| `repository_management` | rhel-target | HTTP リポジトリをクライアントに設定 |
+| `common` | rhel-target | チェックサム検証 |
+| `rhel_podman` | rhel-target | podman + docker-compose インストール |
+| `rhel_training` | rhel-target | イメージロード・コンテナ起動・コンテナ内 repo 設定 |
+| `win_podman` | win11-target | WSL2 + Podman + docker-compose |
+| `win_training` | win11-target | イメージロード・コンテナ起動・コンテナ内 repo 設定 |
+
+### Playbook 実行順序
+
+```
+site.yml
+  ├── repo-server-setup.yml (hosts: repo_server)
+  │     → setup_rhel_image_repository → create_local_repository
+  ├── rhel-setup.yml (hosts: rhel)
+  │     → common → rhel_podman → rhel_training
+  └── windows-setup.yml (hosts: windows)
+        → win_podman → win_training
+```
+
+## テスト環境（Makefile）
+
+### 前提
+
+- KVM 対応ホスト（`/dev/kvm` 有り、bare-metal 推奨）
+- `offline-resources/` が作成済み
+- メモリ: 16GB 以上（RHEL 2台 + Windows 1台 = 14GB）
+
+### コマンド一覧
+
+```bash
+cd airgap/
+make help
+
+# 主要コマンド:
+make setup-vms      # 全 VM を作成・起動
+make deploy-all     # 全 Playbook を実行
+make verify-airgap  # airgap 状態を検証
+make test           # airgap + RHEL 検証
+make destroy-vms    # 全 VM を削除
+make full-test      # 削除→作成→デプロイ→検証（一気通貫）
+```
+
+テスト用インベントリ (`/tmp/airgap-test-inventory.yml`) が必要です:
+
+```yaml
+all:
+  children:
+    repo_server:
+      hosts:
+        repo-server:
+          ansible_host: 192.168.100.5
+          ansible_user: root
+          ansible_password: password
+    rhel:
+      hosts:
+        rhel-target:
+          ansible_host: 192.168.100.10
+          ansible_user: root
+          ansible_password: password
+    windows:
+      hosts:
+        win-airgap-vm:
+          ansible_host: 192.168.100.20
+          ansible_user: cocoon
+          ansible_password: "C@c#on160"
+```
+
+## テスト時の注意事項
+
+### `-netdev user` は絶対に使わない
+
+QEMU の `-netdev user` はホスト経由でインターネットに到達可能な NAT ゲートウェイ (10.0.2.2) を提供します。この環境でテストすると、airgap で失敗すべきオンラインフォールバックが成功してしまいます。
+
+VM は必ず libvirt の `airgap-training` ネットワーク（`<forward>` なし）上で起動してください。
+
+### airgap 検証は必須
+
+テスト前に全 VM で `ping 8.8.8.8` が `Network is unreachable` を返すことを確認してください。
+
+```bash
+make verify-airgap
+```
+
+### Windows 接続: SSH（WinRM は使わない）
+
+Windows への Ansible 接続は SSH を使用します。WinRM は以下の理由で不採用:
+
+1. **ネスト仮想化環境で極端に遅い** — `podman --version` すら 600 秒タイムアウトすることがある
+2. **CLIXML 問題** — PowerShell が stderr に CLIXML を出力し、SSH 接続プラグインが接続エラーと誤認する
+
+SSH 接続時の注意:
+
+| 設定 | 値 | 理由 |
+|---|---|---|
+| `ansible_shell_type` | `powershell` | Windows モジュールは PowerShell 必須 |
+| `ansible_ssh_pipelining` | `false` | 安定性向上 |
+| `ansible_ssh_retries` | `5` | 接続断からの回復 |
+| `-o LogLevel=ERROR` | SSH オプション | stderr への警告出力を抑制 |
+| `-o ServerAliveInterval=15` | SSH オプション | keepalive で接続維持 |
+
+PowerShell コマンドで CLIXML が問題になる場合:
+- `win_shell` の `podman` コマンドに `2>$null` を付ける
+- ポート確認等は `raw` モジュール + `netstat` で代替する
+- `win_path` は `win_shell` でレジストリ直接操作に置き換える
+
+### Windows コンテナ起動: `podman --remote`（docker-compose は使わない）
+
+Windows では `docker-compose` ではなく `podman --remote run` でコンテナを起動します。
+
+理由: `docker-compose` は Windows Named Pipe (`//./pipe/docker_engine`) 経由で通信しますが、このパイプは `podman machine start` を実行した SSH セッション終了時に消失します。`podman --remote` は SSH 経由で WSL 内の podman に直接接続するため、セッション非依存で動作します。
+
+### KVM ゲストイメージのディスク拡張
+
+Red Hat 提供の KVM ゲストイメージはデフォルトで 10GB 未満のパーティションを持ちます。DVD ISO (11GB) の転送前にディスク拡張が必要です。
+
+```bash
+qemu-img resize image.qcow2 20G  # VM 作成前
+# VM 内で:
+TMPDIR=/dev/shm growpart /dev/vda 3 && xfs_growfs /
+```
+
+`growpart` 自体がテンポラリ領域を必要とするため、ディスクフル状態では `TMPDIR=/dev/shm` が必要です。
+
+## 改修時のガイドライン
+
+### コンテナイメージの更新
+
+```bash
+# Containerfile を編集
+vi containers/controller/Containerfile
+
+# バンドルを再作成
+cd airgap/
+./prepare-offline-bundle.sh
+
+# テスト
+make full-test
+```
+
+### 新しいパッケージの追加
+
+`packages/` ディレクトリに MSI/nupkg を追加し、チェックサムを再生成:
+
+```bash
+cp new-package.msi offline-resources/packages/
+cd offline-resources/ && find . -type f ! -name 'checksums.sha256' -exec sha256sum {} \; > checksums.sha256
+```
+
+リポジトリサーバーの nginx は `/packages/` 配下を autoindex で配信するため、ファイルを置くだけで HTTP アクセス可能になります。
+
+### 研修コンテナ内のリポジトリ設定
+
+研修コンテナ（UBI 10 ベース）は UBI リポジトリがデフォルトで有効です。airgap 環境では以下が自動実行されます:
+
+1. UBI リポジトリ (`ubi.repo`) の無効化
+2. `subscription-manager` の repo 管理無効化
+3. リポジトリサーバーの BaseOS/AppStream を設定
+
+これにより `dnf install nginx` 等がリポジトリサーバー経由で動作します。
+
+## 既知の制限事項
+
+| 制限 | 影響 | 回避策 |
+|---|---|---|
+| ネスト仮想化の性能 | Windows VM が極端に遅い | 物理マシンでテスト、または VM メモリを 8GB 以上に |
+| Chocolatey パッケージ | 個別の nupkg を事前取得が必要 | `packages/` に nupkg を追加 |
+| `win_feature` (IIS) | Windows 11 Pro では利用不可 | Windows Server 環境でのみ使用 |
+| 演習 11 の 7-Zip | インターネット URL からのダウンロード不可 | `path=http://repo-server/packages/7z.msi` に変更 |

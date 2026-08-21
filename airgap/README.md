@@ -1,191 +1,113 @@
-# Airgap 環境対応 Ansible 研修環境セットアップ
+# Airgap 環境対応 Ansible 研修環境
 
-インターネット接続のない（エアギャップ）環境で Ansible 研修を実施するためのツールキットです。
-RHEL 10 および Windows 11 をターゲットOSとしてサポートしています。
+インターネット接続のないエアギャップ環境で Ansible 研修を実施するためのツールキットです。
 
-## 概要
+## アーキテクチャ
 
 ```
-┌─────────────────────┐         ┌──────────────────────────────────┐
-│ オンライン環境       │  USB等  │ エアギャップ環境                  │
-│                     │ ──────> │                                  │
-│ prepare-offline-    │         │  Ansible Controller              │
-│ bundle.sh を実行    │         │    │                              │
-│                     │         │    ├─> RHEL 10 VM (podman)       │
-│ offline-resources/  │         │    │     └─ 研修コンテナ×5        │
-│ を生成              │         │    │                              │
-│                     │         │    └─> Windows 11 VM (podman)    │
-│                     │         │          └─ 研修コンテナ×5        │
-└─────────────────────┘         └──────────────────────────────────┘
+┌─────────────────────────┐         ┌──────────────────────────────────────────┐
+│ オンライン環境            │  USB等  │ エアギャップ環境                          │
+│                         │ ──────> │                                          │
+│ prepare-offline-        │         │  repo-server (192.168.100.5)             │
+│ bundle.sh を実行         │         │    └─ RHEL 10 DVD ISO → nginx HTTP 配信  │
+│                         │         │                                          │
+│ offline-resources/      │         │  rhel-target (192.168.100.10)            │
+│ を生成                   │         │    └─ podman + 研修コンテナ×5             │
+│                         │         │         controller / node1-3 / lb        │
+│                         │         │                                          │
+│                         │         │  win11-target (192.168.100.20) [オプション]│
+│                         │         │    └─ WSL2 + Podman + 研修コンテナ×5      │
+└─────────────────────────┘         └──────────────────────────────────────────┘
 ```
+
+## ドキュメント
+
+| ドキュメント | 対象者 | 内容 |
+|---|---|---|
+| [バンドル作成ガイド](docs/bundle-preparation.md) | エンジニア | オンライン環境でバンドルを作成する手順 |
+| [構築ガイド](docs/deployment-guide.md) | エンジニア / お客様 | airgap 環境に研修環境を構築する手順 |
+| [開発者ガイド](docs/development-guide.md) | 開発者 | テスト環境構築・アーキテクチャ・改修方法 |
 
 ## クイックスタート
 
-### Step 1: オフラインバンドルの作成（オンライン環境で実行）
-
 ```bash
-# インターネット接続のある RHEL 10 マシンで実行
+# 1. オンライン環境でバンドルを作成
 cd airgap/
 ./prepare-offline-bundle.sh
-```
 
-生成される `offline-resources/` ディレクトリには以下が含まれます:
-- ビルド済みコンテナイメージ（controller, node）
-- RPMパッケージ（podman + 依存関係）
-- docker-compose バイナリ
-- pip パッケージ（ansible, pywinrm 等）
-- Ansible コレクション
-- 研修資材アーカイブ
+# 2. DVD ISO / VM イメージを offline-resources/ に配置
+#    → 詳細は docs/bundle-preparation.md
 
-### Step 2: バンドルの転送
+# 3. airgap/ ディレクトリ全体を USB 等で持ち込み
 
-`airgap/` ディレクトリ全体をUSBドライブ等でエアギャップ環境に転送します。
-
-### Step 3: KVM テスト環境の構築（オプション）
-
-KVM 対応ホストでテスト用 VM を作成する場合:
-
-```bash
-cd airgap/kvm/
-
-# KVM ホストの準備
-./prepare-kvm-host.sh
-
-# RHEL 10 VM の作成（隔離ネットワーク接続）
-./create-rhel-vm.sh /path/to/rhel-10-x86_64-dvd.iso
-
-# Windows 11 VM の作成（隔離ネットワーク接続）
-./create-windows-vm.sh /path/to/Win11_Japanese_x64.iso
-```
-
-### Step 4: RHEL 10 ターゲットへのデプロイ
-
-```bash
-cd airgap/
-
-# 1. バンドルをターゲットに転送
-#    ISO方式（KVM VMの場合）:
-#    mkisofs -o /tmp/bundle.iso -R -J offline-resources/
-#    virsh attach-disk rhel10-target /tmp/bundle.iso sdb --type cdrom
-
-# 2. ターゲットのVM内でISO をマウントしてバンドルをコピー
-#    mount /dev/sr0 /mnt
-#    cp -r /mnt/* /opt/airgap-bundle/
-
-# 3. inventory を編集
-vi inventory/rhel-hosts.yml
-
-# 4. Playbook を実行
-ansible-playbook -i inventory/rhel-hosts.yml playbooks/rhel-setup.yml
-
-# 5. 検証
-ansible-playbook -i inventory/rhel-hosts.yml playbooks/verify.yml
-```
-
-### Step 5: Windows 11 ターゲットへのデプロイ
-
-```bash
-# 1. Windows に WinRM を設定（管理者PowerShellで実行）
-#    Set-ExecutionPolicy RemoteSigned -Force
-#    .\templates\enable-winrm.ps1
-
-# 2. バンドルを C:\airgap-bundle にコピー
-
-# 3. inventory を編集
-vi inventory/windows-hosts.yml
-
-# 4. Playbook を実行
-ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-setup.yml
+# 4. お客様環境でデプロイ
+#    → 詳細は docs/deployment-guide.md
 ```
 
 ## ディレクトリ構成
 
 ```
 airgap/
-├── README.md                     # このファイル
-├── prepare-offline-bundle.sh     # オフラインバンドル作成スクリプト
-├── ansible.cfg                   # Ansible 設定
-├── inventory/                    # インベントリ
+├── README.md                          このファイル
+├── Makefile                           開発用 VM 管理コマンド
+├── prepare-offline-bundle.sh          バンドル作成スクリプト
+├── ansible.cfg                        Ansible 設定
+├── inventory/                         インベントリテンプレート
 │   ├── rhel-hosts.yml
 │   └── windows-hosts.yml
-├── group_vars/                   # 変数定義
-│   ├── all.yml                   # 共通変数
-│   ├── rhel.yml                  # RHEL固有変数
-│   └── windows.yml               # Windows固有変数
+├── group_vars/                        変数定義
+│   ├── all.yml                        共通変数
+│   ├── rhel.yml                       RHEL 固有
+│   └── windows.yml                    Windows 固有
 ├── playbooks/
-│   ├── site.yml                  # マスターPlaybook
-│   ├── rhel-setup.yml            # RHEL 10 セットアップ
-│   ├── windows-setup.yml         # Windows 11 セットアップ
-│   ├── verify.yml                # デプロイ後検証
+│   ├── site.yml                       マスター Playbook
+│   ├── repo-server-setup.yml          リポジトリサーバー構築
+│   ├── rhel-setup.yml                 RHEL 研修環境構築
+│   ├── windows-setup.yml              Windows 研修環境構築
+│   ├── verify.yml                     検証
 │   └── roles/
-│       ├── common/               # バンドル検証
-│       ├── rhel_podman/          # podman + docker-compose インストール
-│       ├── rhel_training/        # イメージロード・環境起動
-│       ├── win_podman/           # WSL2 + Podman インストール
-│       └── win_training/         # イメージロード・環境起動
-├── offline-resources/            # オフラインリソース（自動生成）
+│       ├── common/                    チェックサム検証
+│       ├── setup_rhel_image_repository/ ISO マウント + yum repo
+│       ├── create_local_repository/   nginx HTTP 配信
+│       ├── repository_management/     クライアント側 repo 設定
+│       ├── rhel_podman/               podman + docker-compose
+│       ├── rhel_training/             イメージロード・コンテナ起動
+│       ├── win_podman/                WSL2 + Podman
+│       └── win_training/              イメージロード・コンテナ起動
+├── offline-resources/                 オフラインリソース（git 管理外）
+│   ├── iso/                           RHEL 10 DVD ISO
+│   ├── vm-images/                     KVM ゲストイメージ
+│   ├── container-images/              コンテナイメージ (.tar)
+│   ├── binaries/                      docker-compose, sshpass 等
+│   ├── packages/                      7-Zip MSI, Chocolatey nupkg 等
+│   ├── pip-packages/                  Python パッケージ (.whl)
+│   ├── ansible-collections/           Ansible コレクション
+│   ├── training-materials/            研修資材アーカイブ
+│   └── checksums.sha256
 ├── templates/
-│   ├── docker-compose-airgap.yml.j2   # Airgap版 compose テンプレート
-│   └── enable-winrm.ps1              # WinRM 有効化スクリプト
-└── kvm/
-    ├── create-airgap-network.xml      # 隔離ネットワーク定義
-    ├── prepare-kvm-host.sh            # KVM ホスト準備
-    ├── create-rhel-vm.sh              # RHEL VM 作成
-    └── create-windows-vm.sh           # Windows VM 作成
+│   ├── docker-compose-airgap.yml.j2
+│   └── enable-winrm.ps1
+├── kvm/                               テスト用 KVM スクリプト
+│   ├── create-airgap-network.xml
+│   ├── prepare-kvm-host.sh
+│   ├── create-rhel-vm.sh
+│   └── create-windows-vm.sh
+└── docs/
+    ├── bundle-preparation.md          バンドル作成ガイド
+    ├── deployment-guide.md            構築ガイド
+    └── development-guide.md           開発者ガイド
 ```
 
 ## 研修環境構成
 
-デプロイ後、各ターゲットマシン上に以下のコンテナが起動します:
+デプロイ後、各ターゲット上に以下のコンテナが起動します。
 
 | コンテナ | IP | 役割 |
-|----------|-----|------|
+|---|---|---|
 | controller | 172.20.0.10 | Ansible 実行環境（SSH: port 2220） |
-| node1 | 172.20.0.11 | Web サーバ |
-| node2 | 172.20.0.12 | Web サーバ |
-| node3 | 172.20.0.13 | Web サーバ |
-| lb | 172.20.0.14 | ロードバランサ |
+| node1 | 172.20.0.11 | 演習対象ノード |
+| node2 | 172.20.0.12 | 演習対象ノード |
+| node3 | 172.20.0.13 | 演習対象ノード |
+| lb | 172.20.0.14 | 演習対象ノード |
 
-研修受講者は `ssh -p 2220 root@localhost`（パスワード: `password`）でコントローラに接続し、Ansible の演習を実施します。
-
-## 必要条件
-
-### オンライン環境（バンドル作成用）
-- RHEL 10 / CentOS 10 または互換OS
-- podman
-- python3 + pip
-- ansible（pip経由）
-- インターネット接続
-
-### ターゲット RHEL 10
-- 最小インストール以上
-- 4GB RAM, 4 vCPU, 100GB ディスク
-- SSH 有効
-
-### ターゲット Windows 11
-- Pro または Enterprise エディション
-- 8GB RAM, 4 vCPU, 120GB ディスク
-- WinRM 有効（`enable-winrm.ps1` で設定）
-
-## トラブルシューティング
-
-### コンテナが起動しない
-```bash
-podman ps -a                          # 全コンテナの状態確認
-podman logs controller                # ログ確認
-docker-compose -f containers/docker-compose.yml logs
-```
-
-### ansible ping が失敗する
-```bash
-# コントローラ内でSSH接続をテスト
-podman exec controller sshpass -p password ssh -o StrictHostKeyChecking=no root@172.20.0.11 hostname
-```
-
-### RPMインストールが失敗する（RHEL）
-```bash
-# ローカルリポジトリの状態確認
-ls /opt/airgap-bundle/rpm-packages/podman/
-createrepo_c /opt/airgap-bundle/rpm-packages/podman/
-dnf repolist
-```
+受講者は `ssh -p 2220 root@<ターゲットIP>`（パスワード: `password`）で接続します。
