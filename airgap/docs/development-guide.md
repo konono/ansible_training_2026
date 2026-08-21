@@ -52,12 +52,71 @@ site.yml
         → win_podman → win_training
 ```
 
+## テスト用 VM イメージの入手
+
+[バンドル作成ガイド](bundle-preparation.md) で生成される `offline-resources/` にはお客様環境で使うリソースのみが含まれます。開発テストでは追加で KVM 用の VM イメージが必要です。
+
+### RHEL 10 KVM ゲストイメージ
+
+Red Hat カスタマーポータルからダウンロード:
+
+```bash
+mkdir -p offline-resources/vm-images/
+cp /path/to/rhel-10.2-x86_64-kvm.qcow2 offline-resources/vm-images/
+```
+
+- URL: https://access.redhat.com/downloads/content/rhel （Cloud and Container Images セクション）
+- サイズ: 約 1.1GB
+
+### Windows 11 qcow2 イメージ（cocoonstack）
+
+[cocoonstack/windows](https://github.com/cocoonstack/windows) が WinRM/SSH 設定済みの Windows 11 VM イメージを GitHub Container Registry に OCI アーティファクトとして公開しています。
+
+14GB の qcow2 ファイルが約 1.9GB × 8 パーツに分割して格納されており、`oras` CLI でダウンロードして結合します。
+
+```bash
+# oras CLI のインストール
+# OCI Registry As Storage — コンテナレジストリから任意のファイルを取得する CLI
+curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.2/oras_1.2.2_linux_amd64.tar.gz \
+  | tar xz -C /usr/local/bin/ oras
+
+# ダウンロード（9ファイル: 8パーツ + SHA256SUMS, 計 約14GB）
+mkdir -p offline-resources/vm-images/win11-parts/
+cd offline-resources/vm-images/win11-parts/
+oras pull ghcr.io/cocoonstack/windows/win11:25h2
+
+# ダウンロードされるファイル:
+#   windows-11-25h2.qcow2.00.qcow2.part  (1.9GB)
+#   windows-11-25h2.qcow2.01.qcow2.part  (1.9GB)
+#   ...（計 8 パーツ）
+#   windows-11-25h2.qcow2.07.qcow2.part  (756MB)
+#   SHA256SUMS
+
+# チェックサム検証 → パーツ結合 → クリーンアップ
+sha256sum -c SHA256SUMS
+cat *.part > ../windows-11-25h2.qcow2
+cd .. && rm -rf win11-parts/
+ls -lh windows-11-25h2.qcow2  # 約 14GB
+```
+
+cocoonstack イメージの仕様:
+
+| 項目 | 値 |
+|---|---|
+| OS | Windows 11 Pro (Build 26200) |
+| ユーザー / パスワード | `cocoon` / `C@c#on160` |
+| WinRM | Basic 認証, ポート 5985 |
+| OpenSSH | ポート 22（デフォルトシェル: cmd.exe） |
+| 仮想ディスク | 40GB (シンプロビジョニング) |
+
+> Ansible SSH 接続時のデフォルトシェル変更は `win_podman` ロールが自動設定します。
+
 ## テスト環境（Makefile）
 
 ### 前提
 
 - KVM 対応ホスト（`/dev/kvm` 有り、bare-metal 推奨）
-- `offline-resources/` が作成済み
+- `offline-resources/` が作成済み（バンドル + VM イメージ）
 - メモリ: 16GB 以上（RHEL 2台 + Windows 1台 = 14GB）
 
 ### コマンド一覧
