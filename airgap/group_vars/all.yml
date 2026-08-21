@@ -3,7 +3,7 @@ bundle_staging_dir: /opt/airgap-bundle
 training_base_dir: /opt/training
 training_dir: "{{ training_base_dir }}/ansible_training_2026"
 
-repo_server_ip: "{{ hostvars[groups['repo_server'][0]]['ansible_host'] | default('') }}"
+repo_server_ip: "{{ hostvars[groups['repo_server'][0]]['ansible_host'] if (groups['repo_server'] | default([])) | length > 0 else '' }}"
 rhel_installer_iso: /opt/rhel10.iso
 
 controller_image: "training-controller:latest"
