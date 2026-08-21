@@ -1,0 +1,68 @@
+---
+- name: RHEL 10 ローカルリポジトリサーバーセットアップ
+  hosts: repo_server
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: OS が RHEL/CentOS 系であることを確認
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == "RedHat"
+        fail_msg: "このPlaybookはRHEL/CentOS系OSでのみ実行可能です"
+
+    - name: RHEL ISO ファイルの存在を確認
+      ansible.builtin.stat:
+        path: "{{ rhel_installer_iso }}"
+      register: iso_check
+
+    - name: ISO ファイルが存在しない場合はエラー
+      ansible.builtin.fail:
+        msg: >-
+          RHEL ISO ファイルが見つかりません: {{ rhel_installer_iso }}
+          リポジトリサーバーに RHEL 10 DVD ISO を配置してください。
+      when: not iso_check.stat.exists
+
+  roles:
+    - setup_rhel_image_repository
+    - create_local_repository
+
+  post_tasks:
+    - name: Windows パッケージディレクトリを作成
+      ansible.builtin.file:
+        path: "{{ packages_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Windows パッケージの存在を確認
+      ansible.builtin.find:
+        paths: "{{ bundle_staging_dir }}/packages"
+        patterns: "*.msi,*.nupkg,*.exe"
+      register: win_packages
+      failed_when: false
+
+    - name: Windows パッケージを配置
+      ansible.builtin.copy:
+        src: "{{ item.path }}"
+        dest: "{{ packages_dir }}/{{ item.path | basename }}"
+        remote_src: true
+        mode: '0644'
+      loop: "{{ win_packages.files | default([]) }}"
+      when: win_packages.matched | default(0) > 0
+
+    - name: リポジトリサーバーセットアップ完了メッセージ
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          ローカルリポジトリサーバーのセットアップが完了しました！
+
+          リポジトリURL:
+            BaseOS:    http://{{ ansible_host }}/repo/BaseOS
+            AppStream: http://{{ ansible_host }}/repo/AppStream
+            Packages:  http://{{ ansible_host }}/packages/
+
+          研修ノードはこのサーバーを yum リポジトリとして使用します。
+          ========================================

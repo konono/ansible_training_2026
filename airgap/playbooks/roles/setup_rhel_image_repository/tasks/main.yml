@@ -1,0 +1,111 @@
+---
+- name: Decide if rhel_installer_iso is empty or undefined
+  ansible.builtin.set_fact:
+    _iso_is_empty: "{{ (rhel_installer_iso | default('') | trim) == '' }}"
+
+- name: Normalize ISO path (absolute vs under playbook files/)
+  ansible.builtin.set_fact:
+    _iso_src: >-
+      {{ (rhel_installer_iso is defined and (rhel_installer_iso|string).startswith('/')) |
+         ternary(rhel_installer_iso, playbook_dir ~ '/files/' ~ (rhel_installer_iso|default(''))) }}
+  when: not _iso_is_empty
+
+- name: Stat local ISO file only when non-empty value provided
+  ansible.builtin.stat:
+    path: "{{ _iso_src }}"
+  register: iso_file_stat
+  when:
+    - _iso_is_empty is defined
+    - not _iso_is_empty
+
+- name: Decide mode (loop ISO vs existing CD-ROM)
+  ansible.builtin.set_fact:
+    use_loop_iso: "{{ (not _iso_is_empty) and (iso_file_stat.stat.exists | default(false)) }}"
+    use_existing_cdrom: "{{ _iso_is_empty or (not (iso_file_stat.stat.exists | default(false))) }}"
+
+- name: Show selected mode
+  ansible.builtin.debug:
+    msg: >-
+      Mode = {{
+        'LOOP_ISO (serve via nginx)' if use_loop_iso else
+        'EXISTING_CDROM (file:// only, no nginx)'
+      }}
+
+- name: Ensure ISO mount point exists
+  ansible.builtin.file:
+    path: "{{ iso_mount_point }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Mount the RHEL ISO (loopback) when using local ISO
+  ansible.posix.mount:
+    path: "{{ iso_mount_point }}"
+    src: "{{ _iso_src }}"
+    fstype: iso9660
+    opts: loop,ro
+    state: mounted
+  when: use_loop_iso
+  become: true
+
+- name: Mount the physical CD-ROM device when using existing CD-ROM
+  ansible.posix.mount:
+    path: "{{ iso_mount_point }}"
+    src: "{{ iso_device_path }}"
+    fstype: iso9660
+    opts: ro
+    state: mounted
+  when: use_existing_cdrom
+  become: true
+
+- name: Verify mount contents (BaseOS must exist)
+  ansible.builtin.stat:
+    path: "{{ iso_mount_point }}/BaseOS"
+  register: baseos_dir
+  become: true
+
+- name: Fail if mount content is not present
+  ansible.builtin.fail:
+    msg: >-
+      {{ iso_mount_point }}/BaseOS が見つかりません。
+      ルートの選択が誤っているか、ISO/CD-ROM がマウントされていません。
+      use_loop_iso={{ use_loop_iso }}, use_existing_cdrom={{ use_existing_cdrom }}
+  when: not baseos_dir.stat.exists
+
+- name: Define BaseOS local repository
+  ansible.builtin.yum_repository:
+    name: "{{ baseos_repo_name }}"
+    file: "{{ baseos_repo_file }}"
+    description: "{{ baseos_repo_description }}"
+    baseurl: "file://{{ iso_mount_point }}/BaseOS"
+    enabled: yes
+    gpgcheck: yes
+    gpgkey: "{{ rhel_gpg_key_path }}"
+    metadata_expire: -1
+    state: present
+  become: true
+
+- name: Define AppStream local repository
+  ansible.builtin.yum_repository:
+    name: "{{ appstream_repo_name }}"
+    file: "{{ appstream_repo_file }}"
+    description: "{{ appstream_repo_description }}"
+    baseurl: "file://{{ iso_mount_point }}/AppStream"
+    enabled: yes
+    gpgcheck: yes
+    gpgkey: "{{ rhel_gpg_key_path }}"
+    metadata_expire: -1
+    state: present
+  become: true
+
+- name: Disable Red Hat Subscription Manager repo control
+  ansible.builtin.command:
+    cmd: "subscription-manager config --rhsm.manage_repos={{ rhsm_manage_repos }}"
+  changed_when: true
+  become: true
+
+- name: Clean all DNF metadata
+  ansible.builtin.command:
+    cmd: dnf clean all
+  changed_when: true
+  become: true

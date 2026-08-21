@@ -1,0 +1,23 @@
+---
+# Create Local Repository default variables
+
+# ISO mount point (should match setup_rhel_image_repository role)
+iso_mount_point: /mnt/cdrom
+
+# Nginx configuration
+nginx_package_name: nginx
+nginx_service_name: nginx
+nginx_service_state: started
+nginx_service_enabled: true
+nginx_repo_config_path: /etc/nginx/conf.d/rhel-repo.conf
+nginx_listen_port: 80
+nginx_server_name: _
+nginx_repo_location: /repo/
+nginx_autoindex: "on"
+
+# Windows packages directory
+packages_dir: /opt/packages
+
+# Firewall configuration
+firewall_cmd_path: /usr/bin/firewall-cmd
+firewall_service_name: http

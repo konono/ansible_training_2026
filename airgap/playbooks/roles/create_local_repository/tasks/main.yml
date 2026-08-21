@@ -1,0 +1,53 @@
+---
+- name: Install nginx (only when serving over HTTP)
+  ansible.builtin.yum:
+    name: "{{ nginx_package_name }}"
+    state: present
+  become: true
+
+- name: Serve the ISO mount via nginx (only when serving over HTTP)
+  ansible.builtin.blockinfile:
+    path: "{{ nginx_repo_config_path }}"
+    create: true
+    block: |
+      server {
+          listen       {{ nginx_listen_port }};
+          server_name  {{ nginx_server_name }};
+          location {{ nginx_repo_location }} {
+              alias {{ iso_mount_point }}/;
+              autoindex {{ nginx_autoindex }};
+          }
+          location /packages/ {
+              alias {{ packages_dir }}/;
+              autoindex on;
+          }
+      }
+  become: true
+
+- name: Ensure nginx is running and enabled (only when serving over HTTP)
+  ansible.builtin.service:
+    name: "{{ nginx_service_name }}"
+    state: "{{ nginx_service_state }}"
+    enabled: "{{ nginx_service_enabled }}"
+  become: true
+
+- name: Check if firewall-cmd exists
+  ansible.builtin.stat:
+    path: "{{ firewall_cmd_path }}"
+  register: firewall_cmd
+  become: true
+
+- name: Open HTTP service in firewall (permanent) if firewalld present
+  ansible.builtin.command:
+    cmd: "firewall-cmd --permanent --add-service={{ firewall_service_name }}"
+  when: firewall_cmd.stat.exists
+  register: firewall_open_http
+  changed_when: firewall_open_http.rc == 0
+  become: true
+
+- name: Reload firewall if firewalld present
+  ansible.builtin.command:
+    cmd: firewall-cmd --reload
+  when: firewall_cmd.stat.exists
+  changed_when: true
+  become: true

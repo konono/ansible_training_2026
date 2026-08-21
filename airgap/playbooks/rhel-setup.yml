@@ -1,0 +1,40 @@
+---
+- name: RHEL 10 Airgap 研修環境セットアップ
+  hosts: rhel
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/rhel.yml
+
+  pre_tasks:
+    - name: OS が RHEL/CentOS 系であることを確認
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == "RedHat"
+        fail_msg: "このPlaybookはRHEL/CentOS系OSでのみ実行可能です"
+
+  roles:
+    - common
+    - rhel_podman
+    - rhel_training
+
+  post_tasks:
+    - name: セットアップ完了メッセージ
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          研修環境のセットアップが完了しました！
+
+          コントローラへの接続:
+            ssh -p {{ controller_ssh_port }} root@localhost
+            パスワード: password
+
+          研修コンテナ:
+            controller: 172.20.0.10 (SSH port {{ controller_ssh_port }})
+            node1:      172.20.0.11
+            node2:      172.20.0.12
+            node3:      172.20.0.13
+            lb:         172.20.0.14
+          ========================================

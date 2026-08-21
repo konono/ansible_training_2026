@@ -1,0 +1,5 @@
+---
+- name: podman を再起動
+  ansible.builtin.systemd:
+    name: podman
+    state: restarted

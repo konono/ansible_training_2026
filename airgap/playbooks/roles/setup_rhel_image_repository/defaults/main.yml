@@ -1,0 +1,21 @@
+---
+# RHEL Image Repository setup default variables
+
+# ISO/CD-ROM settings
+iso_device_path: /dev/sr0
+iso_mount_point: /mnt/cdrom
+rhel_installer_iso: ''  # 空の場合は「未指定」扱い（use_existing_cdrom）
+
+# Repository settings
+baseos_repo_name: BaseOS
+baseos_repo_file: baseos-local
+baseos_repo_description: "Local RHEL BaseOS repository"
+
+appstream_repo_name: AppStream
+appstream_repo_file: appstream-local
+appstream_repo_description: "Local RHEL AppStream repository"
+
+rhel_gpg_key_path: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+
+# Subscription Manager settings
+rhsm_manage_repos: 0  # 0 = disable, 1 = enable

@@ -1,0 +1,7 @@
+---
+ansible_user: root
+ansible_become: true
+
+docker_compose_binary: "{{ bundle_staging_dir }}/binaries/docker-compose-linux-x86_64"
+container_images_dir: "{{ bundle_staging_dir }}/container-images"
+training_archive: "{{ bundle_staging_dir }}/training-materials/ansible_training_2026.tar.gz"

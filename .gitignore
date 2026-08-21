@@ -20,3 +20,6 @@ mise.toml
 # Claude Code
 .claude/
 CLAUDE.md
+airgap/offline-resources/
+airgap/kvm/vms/*.qcow2
+airgap/kvm/vms/**/*.qcow2

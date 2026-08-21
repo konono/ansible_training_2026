@@ -1,0 +1,2 @@
+---
+# win_training の変数は group_vars/windows.yml で定義

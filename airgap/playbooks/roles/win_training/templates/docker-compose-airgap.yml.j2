@@ -1,0 +1,91 @@
+# Airgap版 docker-compose.yml
+# ビルド済みイメージを使用（build: の代わりに image: を指定）
+services:
+  controller:
+    image: {{ controller_image }}
+    container_name: controller
+    hostname: controller
+    privileged: true
+    ports:
+      - "2220:22"
+    volumes:
+      - ../basic-intro/workspace:/root/basic-intro
+      - ../basic-roles/workspace:/root/basic-roles
+      - ../advanced/workspace:/root/advanced
+      - ../homework/workspace:/root/homework
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.0.10
+
+  node1:
+    image: {{ node_image }}
+    container_name: node1
+    hostname: node1
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.0.11
+
+  node2:
+    image: {{ node_image }}
+    container_name: node2
+    hostname: node2
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.0.12
+
+  node3:
+    image: {{ node_image }}
+    container_name: node3
+    hostname: node3
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.0.13
+
+  lb:
+    image: {{ node_image }}
+    container_name: lb
+    hostname: lb
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.0.14
+
+{% if enable_windows | default(false) %}
+  winnode:
+    image: {{ windows_image | default('dockurr/windows:latest') }}
+    container_name: winnode
+    environment:
+      VERSION: "2022"
+      USERNAME: "ansible"
+      PASSWORD: "AnsiblePass123!"
+      LANGUAGE: "Japanese"
+      USER_PORTS: "5985,5986"
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 8006:8006
+      - 13389:3389/tcp
+      - 13389:3389/udp
+      - 5985:5985
+      - 5986:5986
+    volumes:
+      - ./windows/storage:/storage
+      - ./windows/oem:/oem
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.0.20
+    stop_grace_period: 2m
+{% endif %}
+
+networks:
+  ansible_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24

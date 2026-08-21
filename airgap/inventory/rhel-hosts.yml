@@ -1,0 +1,13 @@
+---
+all:
+  children:
+    repo_server:
+      hosts:
+        repo-server:
+          ansible_host: 192.168.100.5
+          # リポジトリサーバーのIPアドレスに変更してください
+    rhel:
+      hosts:
+        rhel-target:
+          ansible_host: 192.168.100.10
+          # airgap KVM VM のIPアドレスに変更してください

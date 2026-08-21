@@ -1,0 +1,38 @@
+---
+# Repository Management default variables
+
+# Repository server settings
+repo_server_ip: ""
+repo_base: "http://{{ repo_server_ip }}/repo"
+
+# Repository management control
+disable_unmanaged_repos: true  # Disable repositories not in 'repositories' list
+repos_to_preserve: []  # Repository files to preserve (e.g., ['redhat.repo'])
+
+# Repository configurations (list of dictionaries)
+repositories:
+  - name: "BaseOS"
+    file: "baseos-http"
+    description: "RHEL BaseOS via local nginx"
+    baseurl: "{{ repo_base }}/BaseOS"
+    enabled: true
+    gpgcheck: true
+    gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+    metadata_expire: -1
+    state: present
+  
+  - name: "AppStream"
+    file: "appstream-http"
+    description: "RHEL AppStream via local nginx"
+    baseurl: "{{ repo_base }}/AppStream"
+    enabled: true
+    gpgcheck: true
+    gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+    metadata_expire: -1
+    state: present
+
+# Subscription Manager settings
+rhsm_manage_repos: 0  # 0 = disable, 1 = enable
+
+# DNF clean options
+dnf_clean_options: "all"

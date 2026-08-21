@@ -1,0 +1,14 @@
+<network>
+  <name>airgap-training</name>
+  <bridge name="virbr-airgap"/>
+  <!-- forward要素なし = 完全隔離ネットワーク（インターネット接続なし） -->
+  <ip address="192.168.100.1" netmask="255.255.255.0">
+    <dhcp>
+      <range start="192.168.100.10" end="192.168.100.50"/>
+      <host mac="52:54:00:AA:BB:05" name="repo-server" ip="192.168.100.5"/>
+      <host mac="52:54:00:AA:BB:10" name="rhel-target" ip="192.168.100.10"/>
+      <host mac="52:54:00:AA:BB:20" name="win-target" ip="192.168.100.20"/>
+      <host mac="52:54:00:AA:BB:01" name="ansible-controller" ip="192.168.100.1"/>
+    </dhcp>
+  </ip>
+</network>

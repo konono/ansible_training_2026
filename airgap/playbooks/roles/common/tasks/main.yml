@@ -1,0 +1,24 @@
+---
+- name: バンドルステージングディレクトリを作成
+  ansible.builtin.file:
+    path: "{{ bundle_staging_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: チェックサムファイルの存在を確認
+  ansible.builtin.stat:
+    path: "{{ bundle_staging_dir }}/checksums.sha256"
+  register: checksums_file
+
+- name: チェックサムを検証
+  ansible.builtin.command:
+    cmd: sha256sum -c checksums.sha256
+    chdir: "{{ bundle_staging_dir }}"
+  when: checksums_file.stat.exists
+  changed_when: false
+  failed_when: false
+  register: checksum_result
+
+- name: チェックサム検証結果を表示
+  ansible.builtin.debug:
+    msg: "チェックサム検証: {{ 'OK' if checksum_result.rc | default(1) == 0 else 'スキップまたは一部失敗' }}"

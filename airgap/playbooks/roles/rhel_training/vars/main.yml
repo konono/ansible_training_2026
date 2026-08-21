@@ -1,0 +1,2 @@
+---
+# rhel_training の変数は group_vars/all.yml および group_vars/rhel.yml で定義

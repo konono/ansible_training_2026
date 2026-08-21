@@ -1,0 +1,2 @@
+---
+# common ロールの変数は group_vars/all.yml で定義

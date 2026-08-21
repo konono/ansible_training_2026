@@ -1,0 +1,162 @@
+---
+- name: 研修用ディレクトリを作成
+  ansible.builtin.file:
+    path: "{{ training_base_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 研修資材アーカイブの存在を確認
+  ansible.builtin.stat:
+    path: "{{ training_archive }}"
+  register: archive_file
+
+- name: tar コマンドの存在を確認
+  ansible.builtin.command: which tar
+  register: tar_check
+  changed_when: false
+  failed_when: false
+
+- name: 研修資材を展開（tar使用）
+  ansible.builtin.unarchive:
+    src: "{{ training_archive }}"
+    dest: "{{ training_base_dir }}"
+    remote_src: true
+    creates: "{{ training_dir }}/README.md"
+  when:
+    - archive_file.stat.exists
+    - tar_check.rc == 0
+
+- name: 研修資材を展開（Pythonフォールバック）
+  ansible.builtin.command:
+    cmd: >
+      python3 -c "
+      import tarfile, os, warnings;
+      warnings.filterwarnings('ignore');
+      os.makedirs('{{ training_base_dir }}', exist_ok=True);
+      tarfile.open('{{ training_archive }}', 'r:gz').extractall('{{ training_base_dir }}')
+      "
+    creates: "{{ training_dir }}/README.md"
+  when:
+    - archive_file.stat.exists
+    - tar_check.rc != 0
+
+- name: コントローライメージをロード
+  ansible.builtin.command:
+    cmd: podman load -i {{ container_images_dir }}/training-controller.tar
+  register: controller_load
+  changed_when: "'Loaded image' in controller_load.stdout"
+
+- name: Linuxノードイメージをロード
+  ansible.builtin.command:
+    cmd: podman load -i {{ container_images_dir }}/training-linux-node.tar
+  register: node_load
+  changed_when: "'Loaded image' in node_load.stdout"
+
+- name: ロード済みイメージを確認
+  ansible.builtin.command: podman images
+  register: loaded_images
+  changed_when: false
+
+- name: ロード済みイメージ一覧を表示
+  ansible.builtin.debug:
+    msg: "{{ loaded_images.stdout_lines }}"
+
+- name: Windowsイメージをロード（有効な場合）
+  ansible.builtin.command:
+    cmd: podman load -i {{ container_images_dir }}/dockurr-windows.tar
+  register: win_load
+  changed_when: "'Loaded image' in win_load.stdout"
+  when: enable_windows | default(false)
+  failed_when: false
+
+- name: airgap版 docker-compose.yml を配置
+  ansible.builtin.template:
+    src: docker-compose-airgap.yml.j2
+    dest: "{{ training_dir }}/containers/docker-compose.yml"
+    mode: '0644'
+    backup: true
+
+- name: workspace ディレクトリを作成
+  ansible.builtin.file:
+    path: "{{ training_dir }}/{{ item }}/workspace"
+    state: directory
+    mode: '0755'
+  loop:
+    - basic-intro
+    - basic-roles
+    - advanced
+    - homework
+
+- name: 研修コンテナを起動
+  ansible.builtin.command:
+    cmd: /usr/local/bin/docker-compose up -d
+    chdir: "{{ training_dir }}/containers"
+  environment:
+    DOCKER_HOST: "unix:///run/podman/podman.sock"
+  register: compose_up
+  changed_when: true
+
+- name: compose 起動結果を表示
+  ansible.builtin.debug:
+    msg: "{{ compose_up.stderr_lines | default([]) }}"
+
+- name: コントローラSSHポートの準備を待機
+  ansible.builtin.wait_for:
+    host: localhost
+    port: "{{ controller_ssh_port }}"
+    timeout: 120
+    state: started
+
+- name: コンテナの状態を確認
+  ansible.builtin.command: podman ps --format "table {{'{{'}}.Names{{'}}'}}\t{{'{{'}}.Status{{'}}'}}\t{{'{{'}}.Ports{{'}}'}}"
+  register: container_status
+  changed_when: false
+
+- name: コンテナ状態を表示
+  ansible.builtin.debug:
+    msg: "{{ container_status.stdout_lines }}"
+
+- name: 研修コンテナにリポジトリサーバーを設定
+  ansible.builtin.shell: |
+    for container in controller node1 node2 node3 lb; do
+      podman exec $container bash -c '
+        sed -i "s/enabled *= *1/enabled=0/g" /etc/yum.repos.d/ubi.repo 2>/dev/null
+        cat > /etc/yum.repos.d/airgap-baseos.repo << REPO
+    [airgap-baseos]
+    name=Airgap BaseOS
+    baseurl=http://{{ repo_server_ip }}/repo/BaseOS
+    enabled=1
+    gpgcheck=0
+    REPO
+        cat > /etc/yum.repos.d/airgap-appstream.repo << REPO
+    [airgap-appstream]
+    name=Airgap AppStream
+    baseurl=http://{{ repo_server_ip }}/repo/AppStream
+    enabled=1
+    gpgcheck=0
+    REPO
+        dnf clean all >/dev/null 2>&1
+      '
+    done
+  changed_when: true
+
+- name: コンテナからリポジトリサーバーへの疎通確認
+  ansible.builtin.shell: |
+    podman exec node1 dnf repolist 2>&1
+  register: container_repolist
+  changed_when: false
+
+- name: コンテナリポジトリ設定を表示
+  ansible.builtin.debug:
+    msg: "{{ container_repolist.stdout_lines }}"
+
+- name: コントローラ内のansibleバージョンを確認
+  ansible.builtin.command:
+    cmd: podman exec controller ansible --version
+  register: ansible_ver
+  changed_when: false
+  failed_when: false
+
+- name: ansible バージョンを表示
+  ansible.builtin.debug:
+    msg: "{{ ansible_ver.stdout_lines | default(['ansible not found in controller']) }}"

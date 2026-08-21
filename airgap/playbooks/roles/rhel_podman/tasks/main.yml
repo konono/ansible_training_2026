@@ -1,0 +1,65 @@
+---
+- name: podman がインストール済みか確認
+  ansible.builtin.command: podman --version
+  register: podman_check
+  changed_when: false
+  failed_when: false
+
+- name: podman のインストール — リポジトリサーバー経由
+  when: podman_check.rc != 0
+  block:
+    - name: リポジトリサーバーが設定されていることを確認
+      ansible.builtin.assert:
+        that:
+          - repo_server_ip | default('') | length > 0
+        fail_msg: >-
+          repo_server_ip が未設定です。
+          インベントリに repo_server グループを追加し、リポジトリサーバーを設定してください。
+
+    - name: HTTP リポジトリを設定
+      ansible.builtin.include_role:
+        name: repository_management
+
+    - name: podman を HTTP リポジトリからインストール
+      ansible.builtin.dnf:
+        name: podman
+        state: present
+
+- name: podman バージョンを確認
+  ansible.builtin.command: podman --version
+  register: podman_version
+  changed_when: false
+
+- name: podman バージョンを表示
+  ansible.builtin.debug:
+    msg: "podman {{ podman_version.stdout }}"
+
+- name: podman.socket を有効化・起動
+  ansible.builtin.systemd:
+    name: podman.socket
+    state: started
+    enabled: true
+  failed_when: false
+
+- name: docker-compose バイナリの存在を確認
+  ansible.builtin.stat:
+    path: "{{ docker_compose_binary }}"
+  register: compose_src
+
+- name: docker-compose バイナリを配置
+  ansible.builtin.copy:
+    src: "{{ docker_compose_binary }}"
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+    remote_src: true
+  when: compose_src.stat.exists
+
+- name: docker-compose バージョンを確認
+  ansible.builtin.command: /usr/local/bin/docker-compose version
+  register: compose_version
+  changed_when: false
+  failed_when: false
+
+- name: docker-compose バージョンを表示
+  ansible.builtin.debug:
+    msg: "{{ compose_version.stdout | default('docker-compose not available') }}"

@@ -1,0 +1,196 @@
+---
+- name: バンドルステージングディレクトリを作成
+  ansible.windows.win_file:
+    path: "{{ win_bundle_dir }}"
+    state: directory
+
+- name: 環境の事前チェック（一括）
+  ansible.windows.win_shell: |
+    $result = @{}
+
+    # Windows 機能
+    $features = @('Microsoft-Hyper-V-All', 'Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform')
+    $missing_features = @()
+    foreach ($f in $features) {
+      $state = (Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction SilentlyContinue).State
+      if ($state -ne 'Enabled') { $missing_features += $f }
+    }
+    $result['features_ok'] = ($missing_features.Count -eq 0)
+    $result['missing_features'] = $missing_features -join ','
+
+    # WSL (ファイル存在で判定、wsl コマンドは呼ばない)
+    $result['wsl_installed'] = (Test-Path "C:\Program Files\WSL\wsl.exe") -or (Test-Path "$env:SystemRoot\System32\wsl.exe")
+
+    # Podman (ファイル存在で判定)
+    $result['podman_installed'] = (Test-Path "C:\Program Files\RedHat\Podman\podman.exe")
+
+    # Podman machine (ディレクトリ存在で判定)
+    $machineDir = "$env:USERPROFILE\.local\share\containers\podman\machine\wsl\wsldist"
+    $result['machine_initialized'] = (Test-Path $machineDir)
+
+    $result | ConvertTo-Json -Compress
+  register: pre_check_raw
+  changed_when: false
+
+- name: 事前チェック結果をパース
+  ansible.builtin.set_fact:
+    pre_check: "{{ pre_check_raw.stdout | from_json }}"
+
+- name: 事前チェック結果を表示
+  ansible.builtin.debug:
+    msg: "{{ pre_check }}"
+
+# --- Windows 機能 ---
+- name: 未有効化の Windows 機能を有効化
+  ansible.windows.win_shell: |
+    $features = "{{ pre_check.missing_features }}".Split(',')
+    $reboot = $false
+    foreach ($f in $features) {
+      $result = Enable-WindowsOptionalFeature -Online -FeatureName $f -NoRestart -ErrorAction SilentlyContinue
+      if ($result.RestartNeeded) { $reboot = $true }
+    }
+    if ($reboot) { Write-Output "REBOOT_REQUIRED" } else { Write-Output "DONE" }
+  register: feature_enable
+  when: not pre_check.features_ok
+  changed_when: true
+
+- name: Windows 機能有効化後に再起動
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+    post_reboot_delay: 30
+  when:
+    - feature_enable is not skipped
+    - "'REBOOT_REQUIRED' in feature_enable.stdout | default('')"
+
+# --- WSL ---
+- name: WSL をバンドル済み MSI からインストール
+  ansible.windows.win_package:
+    path: "{{ win_wsl_msi }}"
+    arguments: /quiet /norestart
+    state: present
+    expected_return_code: [0, 1638, 3010]
+  when: not pre_check.wsl_installed
+  register: wsl_install
+
+- name: WSL インストール後に再起動
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+    post_reboot_delay: 30
+  when:
+    - wsl_install is changed
+    - wsl_install.rc | default(0) not in [1638]
+
+- name: WSL デフォルトバージョンを2に設定
+  ansible.windows.win_shell: |
+    $env:WSL_UTF8 = 1
+    wsl --set-default-version 2 2>&1 | Out-Null
+    exit 0
+  changed_when: false
+  failed_when: false
+
+# --- Podman ---
+- name: Podman をインストール
+  ansible.windows.win_package:
+    path: "{{ win_podman_installer }}"
+    arguments: /quiet /norestart
+    state: present
+    expected_return_code: [0, 1638, 3010]
+  when: not pre_check.podman_installed
+  register: podman_install
+
+- name: Podman インストール後に再起動
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+    post_reboot_delay: 30
+  when:
+    - podman_install is changed
+    - podman_install.rc | default(0) not in [1638]
+
+# --- docker-compose ---
+- name: docker-compose インストールディレクトリを作成
+  ansible.windows.win_file:
+    path: "{{ win_compose_install_dir }}"
+    state: directory
+
+- name: docker-compose.exe を配置
+  ansible.windows.win_copy:
+    src: "{{ win_bundle_dir }}/docker-compose-windows-x86_64.exe"
+    dest: "{{ win_compose_install_dir }}/docker-compose.exe"
+    remote_src: true
+
+- name: docker-compose を PATH に追加
+  ansible.windows.win_shell: |
+    $dir = "{{ win_compose_install_dir }}"
+    $path = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    if ($path -notlike "*$dir*") {
+      [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "Machine")
+      Write-Output "ADDED"
+    } else {
+      Write-Output "ALREADY_IN_PATH"
+    }
+  register: path_result
+  changed_when: "'ADDED' in path_result.stdout | default('')"
+
+# --- Podman machine ---
+- name: Podman machine イメージの存在を確認
+  ansible.windows.win_stat:
+    path: "{{ win_podman_machine_image }}"
+  register: podman_machine_image_file
+
+- name: Podman machine イメージが存在しない場合はエラー
+  ansible.builtin.fail:
+    msg: >-
+      Podman machine イメージが見つかりません: {{ win_podman_machine_image }}
+      prepare-offline-bundle.sh で podman-machine-wsl.ociarchive を取得し、
+      バンドルに含めてください。
+  when: not (podman_machine_image_file.stat.exists | default(false))
+
+- name: podman machine を初期化（バンドル済みイメージ使用）
+  ansible.windows.win_shell: |
+    podman machine init --image-path "{{ win_podman_machine_image }}" 2>&1
+    exit 0
+  async: 900
+  poll: 30
+  register: machine_init
+  when: not pre_check.machine_initialized
+
+- name: podman machine を rootful モードに設定
+  ansible.windows.win_shell: |
+    podman machine set --rootful 2>&1
+    exit 0
+  changed_when: false
+  failed_when: false
+
+- name: podman machine を起動して待機
+  ansible.windows.win_shell: |
+    $running = (podman machine list 2>&1) -match "Currently running"
+    if ($running) {
+      Write-Output "ALREADY_RUNNING"
+      exit 0
+    }
+    Start-Job -ScriptBlock { podman machine start 2>&1 } | Out-Null
+    $timeout = 1200
+    $elapsed = 0
+    while ($elapsed -lt $timeout) {
+      Start-Sleep -Seconds 15
+      $elapsed += 15
+      $status = podman machine list 2>&1
+      if ($status -match "Currently running") {
+        Write-Output "STARTED after ${elapsed}s"
+        exit 0
+      }
+    }
+    Write-Output "TIMEOUT"
+    exit 1
+  register: machine_start
+  changed_when: "'STARTED' in machine_start.stdout | default('')"
+
+- name: podman バージョンを確認
+  ansible.windows.win_shell: podman --version 2>$null
+  register: win_podman_ver
+  changed_when: false
+  failed_when: false
+
+- name: podman バージョンを表示
+  ansible.builtin.debug:
+    msg: "{{ win_podman_ver.stdout | default('podman not available') }}"

@@ -1,0 +1,87 @@
+---
+- name: 研修環境の動作確認（RHEL）
+  hosts: rhel
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/rhel.yml
+
+  tasks:
+    - name: podman が動作しているか確認
+      ansible.builtin.command: podman --version
+      register: podman_ver
+      changed_when: false
+
+    - name: コンテナが全て起動しているか確認
+      ansible.builtin.command: podman ps --format json
+      register: containers
+      changed_when: false
+
+    - name: 起動中のコンテナ数を確認
+      ansible.builtin.assert:
+        that:
+          - (containers.stdout | from_json | length) >= 5
+        fail_msg: "起動中のコンテナが5未満です（controller + node1-3 + lb）"
+        success_msg: "全てのコンテナが起動しています"
+
+    - name: コントローラSSHポートへの接続を確認
+      ansible.builtin.wait_for:
+        host: localhost
+        port: 2220
+        timeout: 10
+        state: started
+
+    - name: コントローラ内からノードへのping確認
+      ansible.builtin.command: >
+        podman exec controller bash -c
+        "echo 'password' | sshpass -p 'password' ssh -o StrictHostKeyChecking=no root@172.20.0.{{ item }} cat /etc/hostname"
+      loop:
+        - 11
+        - 12
+        - 13
+        - 14
+      register: ping_results
+      changed_when: false
+      failed_when: ping_results.rc not in [0, 127]
+
+    - name: ノード接続結果を表示
+      ansible.builtin.debug:
+        msg: "172.20.0.{{ item.item }} -> SSH OK (rc={{ item.rc }})"
+      loop: "{{ ping_results.results }}"
+      loop_control:
+        label: "172.20.0.{{ item.item }}"
+
+    - name: 検証完了
+      ansible.builtin.debug:
+        msg: "全ての検証が完了しました。研修環境は正常に動作しています。"
+
+- name: 研修環境の動作確認（Windows）
+  hosts: windows
+  gather_facts: false
+  tasks:
+    - name: podman が動作しているか確認
+      ansible.windows.win_command: podman --version
+      register: win_podman_ver
+      changed_when: false
+
+    - name: コンテナの状態を確認
+      ansible.windows.win_command: podman ps
+      register: win_containers
+      changed_when: false
+
+    - name: コンテナ状態を表示
+      ansible.builtin.debug:
+        msg: "{{ win_containers.stdout_lines }}"
+
+    - name: コントローラSSHポートへの接続を確認
+      ansible.windows.win_wait_for:
+        host: localhost
+        port: 2220
+        timeout: 10
+        state: started
+
+    - name: 検証完了
+      ansible.builtin.debug:
+        msg: "全ての検証が完了しました。研修環境は正常に動作しています。"

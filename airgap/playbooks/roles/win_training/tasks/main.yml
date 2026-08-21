@@ -1,0 +1,141 @@
+---
+- name: 研修用ディレクトリを作成
+  ansible.windows.win_file:
+    path: "{{ win_training_dir }}"
+    state: directory
+
+- name: 研修資材アーカイブを展開
+  ansible.windows.win_command: >
+    tar xzf "{{ win_bundle_dir }}\training-materials\ansible_training_2026.tar.gz"
+    -C "{{ win_training_dir }}"
+  args:
+    creates: "{{ win_training_dir }}/ansible_training_2026/README.md"
+
+- name: コンテナイメージをロード
+  ansible.windows.win_shell: |
+    $images = (podman images 2>&1) -join "`n"
+    $has_ctrl = $images -match "training-controller"
+    $has_node = $images -match "training-linux-node"
+    if ($has_ctrl -and $has_node) {
+      Write-Output "ALREADY_LOADED"
+      exit 0
+    }
+    if (-not $has_ctrl) {
+      Write-Output "Loading controller image..."
+      podman load -i "{{ win_bundle_dir }}\container-images\training-controller.tar" 2>&1
+    }
+    if (-not $has_node) {
+      Write-Output "Loading linux-node image..."
+      podman load -i "{{ win_bundle_dir }}\container-images\training-linux-node.tar" 2>&1
+    }
+    Write-Output "LOAD_COMPLETE"
+  register: image_load
+  changed_when: "'LOAD_COMPLETE' in image_load.stdout | default('')"
+
+- name: ロード済みイメージを確認
+  ansible.windows.win_shell: podman --remote images 2>$null
+  register: win_images
+  changed_when: false
+
+- name: イメージ一覧を表示
+  ansible.builtin.debug:
+    msg: "{{ win_images.stdout_lines }}"
+
+- name: airgap版 docker-compose.yml を配置
+  ansible.windows.win_template:
+    src: docker-compose-airgap.yml.j2
+    dest: "{{ win_compose_dir }}/docker-compose.yml"
+    backup: true
+
+- name: workspace ディレクトリを作成
+  ansible.windows.win_shell: |
+    $dirs = @('basic-intro', 'basic-roles', 'advanced', 'homework')
+    foreach ($d in $dirs) {
+      $path = "{{ win_training_dir }}/ansible_training_2026/$d/workspace"
+      if (-not (Test-Path $path)) {
+        New-Item -Path $path -ItemType Directory -Force | Out-Null
+        Write-Output "Created $d"
+      }
+    }
+    Write-Output "DONE"
+  register: workspace_dirs
+  changed_when: "'Created' in workspace_dirs.stdout | default('')"
+
+- name: 既存コンテナを停止・削除
+  ansible.windows.win_shell: |
+    podman --remote stop -a 2>$null
+    podman --remote rm -af 2>$null
+    Write-Output "CLEANED"
+  register: container_clean
+  changed_when: "'CLEANED' in container_clean.stdout | default('')"
+  failed_when: false
+
+- name: podman ネットワークを作成
+  ansible.builtin.raw: >
+    podman --remote network rm ansible_net 2>&1;
+    podman --remote network rm containers_ansible_net 2>&1;
+    podman --remote network create --subnet {{ container_network_subnet }} ansible_net 2>&1
+  register: net_create
+  changed_when: true
+  failed_when: false
+
+- name: 研修コンテナを起動
+  ansible.builtin.raw: >
+    podman --remote run -d --name controller --hostname controller --privileged
+    --network ansible_net --ip {{ controller_ip }}
+    -p {{ controller_ssh_port }}:22 {{ controller_image }} ;
+    podman --remote run -d --name node1 --hostname node1 --privileged
+    --network ansible_net --ip 172.20.0.11 {{ node_image }} ;
+    podman --remote run -d --name node2 --hostname node2 --privileged
+    --network ansible_net --ip 172.20.0.12 {{ node_image }} ;
+    podman --remote run -d --name node3 --hostname node3 --privileged
+    --network ansible_net --ip 172.20.0.13 {{ node_image }} ;
+    podman --remote run -d --name lb --hostname lb --privileged
+    --network ansible_net --ip 172.20.0.14 {{ node_image }}
+  register: win_compose_up
+  changed_when: true
+  failed_when: false
+
+- name: リポジトリ設定ファイルを作成
+  ansible.windows.win_copy:
+    content: |
+      [airgap-baseos]
+      name=Airgap BaseOS
+      baseurl=http://{{ repo_server_ip }}/repo/BaseOS
+      enabled=1
+      gpgcheck=0
+
+      [airgap-appstream]
+      name=Airgap AppStream
+      baseurl=http://{{ repo_server_ip }}/repo/AppStream
+      enabled=1
+      gpgcheck=0
+    dest: C:/airgap-bundle/airgap.repo
+
+- name: 研修コンテナにリポジトリサーバーを設定
+  ansible.windows.win_shell: |
+    $containers = @("controller", "node1", "node2", "node3", "lb")
+    foreach ($c in $containers) {
+      podman --remote cp C:/airgap-bundle/airgap.repo "${c}:/etc/yum.repos.d/airgap.repo" 2>$null
+      podman --remote exec $c bash -c "rm -f /etc/yum.repos.d/ubi.repo; subscription-manager config --rhsm.manage_repos=0 2>/dev/null; dnf clean all" 2>$null
+    }
+    Write-Output "CONFIGURED"
+  register: repo_setup
+  changed_when: "'CONFIGURED' in repo_setup.stdout | default('')"
+
+- name: コントローラSSHポートの準備を待機
+  ansible.builtin.raw: netstat -an | findstr "2220.*LISTENING"
+  register: ssh_wait
+  until: ssh_wait.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: コンテナの状態を確認
+  ansible.builtin.raw: podman --remote ps
+  register: win_container_status
+  changed_when: false
+
+- name: コンテナ状態を表示
+  ansible.builtin.debug:
+    msg: "{{ win_container_status.stdout_lines }}"

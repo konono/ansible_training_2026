@@ -1,0 +1,18 @@
+---
+ansible_connection: ssh
+ansible_port: 22
+ansible_shell_type: powershell
+ansible_become: false
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o LogLevel=ERROR'
+ansible_ssh_pipelining: false
+ansible_ssh_retries: 5
+
+win_bundle_dir: 'C:/airgap-bundle'
+win_training_dir: 'C:/training'
+win_compose_dir: 'C:/training/ansible_training_2026/containers'
+win_podman_installer: "{{ win_bundle_dir }}/podman-setup.exe"
+win_wsl_msi: "{{ win_bundle_dir }}/wsl.msi"
+win_podman_machine_image: "{{ win_bundle_dir }}/podman-machine-wsl.ociarchive"
+win_podman_machine_name: podman-machine-default
+win_compose_binary: "{{ win_bundle_dir }}/docker-compose-windows-x86_64.exe"
+win_compose_install_dir: 'C:/ProgramData/DockerCompose'

@@ -1,0 +1,10 @@
+---
+all:
+  children:
+    windows:
+      hosts:
+        win-target:
+          ansible_host: 192.168.100.20
+          ansible_user: cocoon
+          ansible_password: "C@c#on160"
+          # airgap KVM VM の情報に変更してください

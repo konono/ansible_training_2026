@@ -1,0 +1,68 @@
+---
+- name: Configure repositories
+  ansible.builtin.yum_repository:
+    name: "{{ item.name }}"
+    file: "{{ item.file }}"
+    description: "{{ item.description }}"
+    baseurl: "{{ item.baseurl }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    gpgcheck: "{{ item.gpgcheck | default(true) }}"
+    gpgkey: "{{ item.gpgkey | default('') }}"
+    metadata_expire: "{{ item.metadata_expire | default(-1) }}"
+    state: "{{ item.state | default('present') }}"
+    # Optional parameters
+    priority: "{{ item.priority | default(omit) }}"
+    includepkgs: "{{ item.includepkgs | default(omit) }}"
+    excludepkgs: "{{ item.excludepkgs | default(omit) }}"
+    skip_if_unavailable: "{{ item.skip_if_unavailable | default(omit) }}"
+    sslverify: "{{ item.sslverify | default(omit) }}"
+    proxy: "{{ item.proxy | default(omit) }}"
+  loop: "{{ repositories }}"
+  become: true
+  when: repositories is defined and repositories | length > 0
+
+- name: Get list of all existing repository files
+  ansible.builtin.find:
+    paths: /etc/yum.repos.d/
+    patterns: "*.repo"
+  register: existing_repo_files
+  become: true
+  when: disable_unmanaged_repos | default(true) | bool
+
+- name: Get list of managed repository files
+  ansible.builtin.set_fact:
+    managed_repo_files: >
+      {%- set file_list = [] -%}
+      {%- for repo in repositories | default([]) -%}
+        {%- if repo.file is defined -%}
+          {%- set _ = file_list.append('/etc/yum.repos.d/' + repo.file + '.repo') -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ file_list }}
+  when: disable_unmanaged_repos | default(true) | bool
+
+- name: Disable all repositories in unmanaged files
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: '^enabled\s*=\s*1'
+    replace: 'enabled=0'
+  loop: "{{ existing_repo_files.files }}"
+  become: true
+  when: 
+    - disable_unmanaged_repos | default(true) | bool
+    - existing_repo_files is defined
+    - item.path not in managed_repo_files
+    - not item.path | regex_search('(' + (repos_to_preserve | default([]) | join('|')) + ')')
+
+- name: Clean DNF metadata
+  ansible.builtin.command:
+    cmd: "dnf clean {{ dnf_clean_options }}"
+  changed_when: true
+  become: true
+
+- name: Disable RHSM repository management
+  ansible.builtin.command:
+    cmd: "subscription-manager config --rhsm.manage_repos={{ rhsm_manage_repos }}"
+  changed_when: true
+  become: true
+  when: rhsm_manage_repos is defined
