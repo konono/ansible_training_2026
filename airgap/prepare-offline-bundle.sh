@@ -108,8 +108,10 @@ download_binaries() {
     curl -fsSL \
         "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
         -o "$BUNDLE_DIR/binaries/docker-compose-linux-x86_64" && \
-        chmod +x "$BUNDLE_DIR/binaries/docker-compose-linux-x86_64" || \
-        log_warn "docker-compose Linux版ダウンロード失敗"
+        chmod +x "$BUNDLE_DIR/binaries/docker-compose-linux-x86_64" || {
+        log_error "docker-compose Linux版ダウンロード失敗（必須）"
+        exit 1
+    }
 
     log_info "docker-compose (Windows x86_64) をダウンロード中..."
     curl -fsSL \
@@ -120,8 +122,10 @@ download_binaries() {
     log_info "sshpass 1.10 ソースをダウンロード中..."
     curl -fsSL \
         "https://sourceforge.net/projects/sshpass/files/sshpass/1.10/sshpass-1.10.tar.gz/download" \
-        -o "$BUNDLE_DIR/binaries/sshpass-1.10.tar.gz" || \
-        log_warn "sshpass ダウンロード失敗"
+        -o "$BUNDLE_DIR/binaries/sshpass-1.10.tar.gz" || {
+        log_error "sshpass ダウンロード失敗（必須）"
+        exit 1
+    }
 
     if [[ "$SKIP_WINDOWS" != "true" ]]; then
         log_info "Podman Windows インストーラをダウンロード中..."
@@ -273,6 +277,15 @@ main() {
     download_ansible_collections
     archive_training_materials
     generate_checksums
+
+    if [[ -x "$SCRIPT_DIR/offline-validation.sh" ]]; then
+        log_info "=== Phase 8: バンドル検証 ==="
+        "$SCRIPT_DIR/offline-validation.sh" "$BUNDLE_DIR" || {
+            log_error "バンドル検証に失敗しました。上記の [NG] 項目を確認してください"
+            exit 1
+        }
+    fi
+
     print_summary
 }
 

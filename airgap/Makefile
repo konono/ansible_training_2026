@@ -57,7 +57,7 @@ setup-rhel-vms: setup-network ## RHEL VM (repo-server + rhel-target) を作成�
 			--run-command 'sed -i "s/#PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config' \
 			--run-command 'systemctl enable sshd' \
 			$$EXTRA --selinux-relabel 2>&1 | grep Finishing; \
-		qemu-img resize /tmp/$$vm.qcow2 20G 2>&1; \
+		sudo qemu-img resize /tmp/$$vm.qcow2 20G 2>&1; \
 		sudo mv /tmp/$$vm.qcow2 $(IMG_DIR)/$$vm.qcow2; \
 	done
 	@echo "=== VM 起動 ==="

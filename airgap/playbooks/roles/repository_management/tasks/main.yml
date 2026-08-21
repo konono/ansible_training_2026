@@ -52,7 +52,7 @@
     - disable_unmanaged_repos | default(true) | bool
     - existing_repo_files is defined
     - item.path not in managed_repo_files
-    - not item.path | regex_search('(' + (repos_to_preserve | default([]) | join('|')) + ')')
+    - (repos_to_preserve | default([]) | length == 0) or (not item.path | regex_search('(' + (repos_to_preserve | join('|')) + ')'))
 
 - name: Clean DNF metadata
   ansible.builtin.command:

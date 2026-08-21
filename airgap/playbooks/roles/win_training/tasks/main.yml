@@ -92,7 +92,12 @@
   ansible.builtin.raw: >
     podman --remote run -d --name controller --hostname controller --privileged
     --network ansible_net --ip {{ controller_ip }}
-    -p {{ controller_ssh_port }}:22 {{ controller_image }} ;
+    -p {{ controller_ssh_port }}:22
+    -v {{ win_training_dir }}/ansible_training_2026/basic-intro/workspace:/root/basic-intro:Z
+    -v {{ win_training_dir }}/ansible_training_2026/basic-roles/workspace:/root/basic-roles:Z
+    -v {{ win_training_dir }}/ansible_training_2026/advanced/workspace:/root/advanced:Z
+    -v {{ win_training_dir }}/ansible_training_2026/homework/workspace:/root/homework:Z
+    {{ controller_image }} ;
     podman --remote run -d --name node1 --hostname node1 --privileged
     --network ansible_net --ip 172.20.0.11 {{ node_image }} ;
     podman --remote run -d --name node2 --hostname node2 --privileged
@@ -103,7 +108,7 @@
     --network ansible_net --ip 172.20.0.14 {{ node_image }}
   register: win_compose_up
   changed_when: true
-  failed_when: false
+  failed_when: win_compose_up.rc | default(0) != 0 and 'already in use' not in win_compose_up.stdout | default('')
 
 - name: リポジトリ設定ファイルを作成
   ansible.windows.win_copy:
