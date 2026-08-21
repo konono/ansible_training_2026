@@ -1,4 +1,8 @@
 ---
+# Windows 専用インベントリ（統合インベントリ inventory/hosts.yml の使用を推奨）
+# 単体で使う場合は repo_server_ip の指定が必要:
+#   ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-setup.yml \
+#     -e "repo_server_ip=<リポジトリサーバーのIP>"
 all:
   children:
     windows:
@@ -7,4 +11,3 @@ all:
           ansible_host: 192.168.100.20
           ansible_user: cocoon
           ansible_password: "C@c#on160"
-          # airgap KVM VM の情報に変更してください

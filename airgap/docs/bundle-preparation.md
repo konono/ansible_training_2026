@@ -52,6 +52,7 @@ cp /path/to/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
 - URL: https://access.redhat.com/downloads/content/rhel
 - サイズ: 約 11GB
 - 必須: BaseOS と AppStream の両方が含まれる DVD ISO（Boot ISO は不可）
+- 用途: リポジトリサーバーでの HTTP 配信 **および** コントローラノードのセットアップ（`setup-controller.sh` が ISO をマウントして前提パッケージをインストール）
 
 ## Step 3: バンドルの確認
 

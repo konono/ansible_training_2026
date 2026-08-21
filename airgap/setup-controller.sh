@@ -21,24 +21,77 @@ echo "このスクリプトは ansible-playbook を実行するマシンを"
 echo "airgap 環境でセットアップします。"
 echo ""
 
-# --- Step 1: Python3 確認 ---
-log_info "Step 1: Python3 の確認"
-if ! command -v python3 >/dev/null 2>&1; then
-    log_error "python3 が見つかりません。RHEL 10 の場合: dnf install python3 python3-pip"
+# --- Step 1: DVD ISO からローカルリポジトリを設定 ---
+log_info "Step 1: DVD ISO からローカルリポジトリを設定"
+
+ISO_PATH="${1:-}"
+if [[ -z "$ISO_PATH" ]]; then
+    ISO_PATH=$(ls "$BUNDLE_DIR"/iso/rhel-*.iso 2>/dev/null | head -1)
+fi
+if [[ -z "$ISO_PATH" ]] || [[ ! -f "$ISO_PATH" ]]; then
+    log_error "DVD ISO が見つかりません。引数で指定するか offline-resources/iso/ に配置してください"
+    log_error "使用方法: $0 [/path/to/rhel-10.x-dvd.iso]"
     exit 1
 fi
-python3 --version
-echo ""
+log_info "ISO: $ISO_PATH"
 
-# --- Step 2: pip の確認 ---
-log_info "Step 2: pip の確認"
-if ! python3 -m pip --version >/dev/null 2>&1; then
-    log_warn "pip が見つかりません。ensurepip を試行します"
-    python3 -m ensurepip --user 2>/dev/null || {
-        log_error "pip のセットアップに失敗しました。dnf install python3-pip を実行してください"
+if mountpoint -q /mnt/cdrom 2>/dev/null; then
+    log_info "/mnt/cdrom は既にマウント済みです"
+else
+    mkdir -p /mnt/cdrom
+    mount -o loop,ro "$ISO_PATH" /mnt/cdrom 2>/dev/null || {
+        log_error "ISO マウントに失敗しました（root 権限が必要です）"
         exit 1
     }
+    log_info "ISO をマウントしました"
 fi
+
+if [[ ! -d /mnt/cdrom/BaseOS ]]; then
+    log_error "ISO に BaseOS ディレクトリがありません。DVD ISO（Boot ISO ではない）を使用してください"
+    exit 1
+fi
+
+# UBI リポジトリ無効化 + ローカルリポジトリ設定
+sed -i 's/enabled *= *1/enabled = 0/g' /etc/yum.repos.d/ubi.repo 2>/dev/null || true
+subscription-manager config --rhsm.manage_repos=0 2>/dev/null || true
+
+cat > /etc/yum.repos.d/local-baseos.repo << EOF
+[local-baseos]
+name=Local BaseOS (DVD ISO)
+baseurl=file:///mnt/cdrom/BaseOS
+enabled=1
+gpgcheck=0
+EOF
+
+cat > /etc/yum.repos.d/local-appstream.repo << EOF
+[local-appstream]
+name=Local AppStream (DVD ISO)
+baseurl=file:///mnt/cdrom/AppStream
+enabled=1
+gpgcheck=0
+EOF
+
+dnf clean all >/dev/null 2>&1
+log_info "ローカルリポジトリ設定完了"
+echo ""
+
+# --- Step 2: 前提パッケージのインストール ---
+log_info "Step 2: 前提パッケージのインストール"
+PKGS_TO_INSTALL=()
+command -v python3   >/dev/null 2>&1 || PKGS_TO_INSTALL+=("python3")
+python3 -m pip --version >/dev/null 2>&1 || PKGS_TO_INSTALL+=("python3-pip")
+command -v gcc       >/dev/null 2>&1 || PKGS_TO_INSTALL+=("gcc")
+command -v make      >/dev/null 2>&1 || PKGS_TO_INSTALL+=("make")
+command -v ssh       >/dev/null 2>&1 || PKGS_TO_INSTALL+=("openssh-clients")
+
+if [[ ${#PKGS_TO_INSTALL[@]} -gt 0 ]]; then
+    log_info "インストール: ${PKGS_TO_INSTALL[*]}"
+    dnf install -y "${PKGS_TO_INSTALL[@]}" 2>&1 | tail -3
+else
+    log_info "前提パッケージは全てインストール済みです"
+fi
+
+python3 --version
 python3 -m pip --version
 echo ""
 
@@ -125,9 +178,7 @@ echo "コレクション:"
 ansible-galaxy collection list 2>/dev/null | grep -E 'ansible\.(posix|windows)|community\.(general|windows)' | head -10
 echo ""
 echo "次のステップ:"
-echo "  1. inventory/ のホスト情報を環境に合わせて編集"
-echo "  2. ansible-playbook -i inventory/rhel-hosts.yml playbooks/repo-server-setup.yml"
-echo "  3. ansible-playbook -i inventory/rhel-hosts.yml playbooks/rhel-setup.yml"
-echo "  4. (Windows) ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-setup.yml"
+echo "  1. inventory/hosts.yml のホスト情報を環境に合わせて編集"
+echo "  2. ansible-playbook -i inventory/hosts.yml playbooks/site.yml"
 echo ""
 echo "詳細は docs/deployment-guide.md を参照してください。"

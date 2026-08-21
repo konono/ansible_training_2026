@@ -1,13 +1,15 @@
 ---
+# RHEL 専用インベントリ（統合インベントリ inventory/hosts.yml の使用を推奨）
 all:
+  vars:
+    ansible_user: root
+    ansible_password: password
   children:
     repo_server:
       hosts:
         repo-server:
           ansible_host: 192.168.100.5
-          # リポジトリサーバーのIPアドレスに変更してください
     rhel:
       hosts:
         rhel-target:
           ansible_host: 192.168.100.10
-          # airgap KVM VM のIPアドレスに変更してください

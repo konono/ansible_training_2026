@@ -7,34 +7,58 @@ airgap 環境に Ansible 研修環境を構築する手順書です。
 ### 持ち込み資材
 
 - `airgap/` ディレクトリ一式（USB 等で転送済み）
-- `offline-resources/` 内に以下が含まれていること:
-  - `iso/rhel-10.2-x86_64-dvd.iso`
-  - `vm-images/rhel-10.2-x86_64-kvm.qcow2`
+- `offline-resources/` 内に以下が含まれていること（`./offline-validation.sh` で確認可能）:
+  - `iso/rhel-10.2-x86_64-dvd.iso` — リポジトリサーバー配置用 **かつ** コントローラセットアップ用
   - `container-images/`, `binaries/`, `packages/`, `pip-packages/`, `ansible-collections/`, `training-materials/`
-  - Windows 環境の場合: `vm-images/windows-11-25h2.qcow2`
+
+> **注意**: `vm-images/` は開発テスト用です。お客様環境では VM を VMware, Hyper-V, 物理マシン等で個別に用意してください。
 
 ### マシン要件
 
 | 役割 | OS | CPU | メモリ | ディスク |
 |---|---|---|---|---|
-| Ansible コントローラ | RHEL 10 | 2+ | 4GB+ | 20GB+ |
+| Ansible コントローラ | RHEL 10 | 2+ | 4GB+ | 20GB+（DVD ISO 一時使用） |
 | リポジトリサーバー | RHEL 10 | 2+ | 2GB+ | 20GB+（ISO 11GB 含む）|
 | RHEL 研修ターゲット | RHEL 10 | 4+ | 4GB+ | 20GB+ |
 | Windows 研修ターゲット（オプション）| Windows 11 Pro | 4+ | 8GB+ | 40GB+ |
 
-すべてのマシンが同一ネットワーク上にあり、SSH（RHEL）/ SSH（Windows）で接続可能であること。
+すべてのマシンが同一ネットワーク上にあり、SSH で接続可能であること。
+
+## Step 0: コントローラノードのセットアップ
+
+Ansible を実行するコントローラノード自体も airgap 環境のため、オフラインでセットアップします。
+DVD ISO をコントローラにコピーし、`setup-controller.sh` を実行してください。
+
+```bash
+# DVD ISO をコントローラにコピー（USB ドライブ等から）
+cp /mnt/usb/airgap/offline-resources/iso/rhel-10.2-x86_64-dvd.iso /opt/rhel10.iso
+
+# セットアップ実行（root 権限が必要）
+cd /path/to/airgap/
+./setup-controller.sh /opt/rhel10.iso
+```
+
+このスクリプトが自動で行うこと:
+1. DVD ISO をマウントしてローカルリポジトリを設定
+2. `gcc`, `make`, `python3-pip` 等の前提パッケージをインストール
+3. `ansible-core` を pip パッケージからオフラインインストール
+4. `sshpass` をソースからビルド
+5. Ansible コレクション（`ansible.posix`, `ansible.windows` 等）をインストール
 
 ## Step 1: インベントリの編集
 
-お客様環境の IP アドレスに合わせて編集します。
+`inventory/hosts.yml`（統合インベントリ）をお客様環境に合わせて編集します。
 
 ```bash
 cd airgap/
-vi inventory/rhel-hosts.yml
+vi inventory/hosts.yml
 ```
 
 ```yaml
 all:
+  vars:
+    ansible_user: root
+    ansible_password: <RHEL の root パスワード>
   children:
     repo_server:
       hosts:
@@ -44,23 +68,13 @@ all:
       hosts:
         rhel-target:
           ansible_host: <RHEL ターゲットの IP>
-```
-
-Windows を使う場合:
-
-```bash
-vi inventory/windows-hosts.yml
-```
-
-```yaml
-all:
-  children:
-    windows:
-      hosts:
-        win-target:
-          ansible_host: <Windows ターゲットの IP>
-          ansible_user: <ユーザー名>
-          ansible_password: "<パスワード>"
+    # Windows を使う場合はコメントを外す
+    # windows:
+    #   hosts:
+    #     win-target:
+    #       ansible_host: <Windows の IP>
+    #       ansible_user: <Windows ユーザー名>
+    #       ansible_password: "<Windows パスワード>"
 ```
 
 ## Step 2: リソースの配置
