@@ -85,8 +85,8 @@ airgap/
 │   ├── training-materials/            研修資材アーカイブ
 │   └── checksums.sha256
 ├── templates/
-│   ├── docker-compose-airgap.yml.j2
-│   └── enable-winrm.ps1
+│   ├── enable-ssh.ps1                 Windows SSH 有効化（標準）
+│   └── enable-winrm.ps1              Windows WinRM 有効化（代替）
 ├── kvm/                               テスト用 KVM スクリプト
 │   ├── create-airgap-network.xml
 │   ├── prepare-kvm-host.sh

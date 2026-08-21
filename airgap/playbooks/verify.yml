@@ -14,17 +14,22 @@
       register: podman_ver
       changed_when: false
 
-    - name: コンテナが全て起動しているか確認
-      ansible.builtin.command: podman ps --format json
+    - name: 研修コンテナが全て起動しているか確認
+      ansible.builtin.shell: |
+        missing=""
+        for name in controller node1 node2 node3 lb; do
+          podman ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -q "^${name}$" || missing="${missing} ${name}"
+        done
+        echo "${missing:-all_running}"
       register: containers
       changed_when: false
 
-    - name: 起動中のコンテナ数を確認
+    - name: 起動中のコンテナを確認
       ansible.builtin.assert:
         that:
-          - (containers.stdout | from_json | length) >= 5
-        fail_msg: "起動中のコンテナが5未満です（controller + node1-3 + lb）"
-        success_msg: "全てのコンテナが起動しています"
+          - "'all_running' in containers.stdout"
+        fail_msg: "停止中のコンテナがあります:{{ containers.stdout }}"
+        success_msg: "全てのコンテナ (controller, node1-3, lb) が起動しています"
 
     - name: コントローラSSHポートへの接続を確認
       ansible.builtin.wait_for:
