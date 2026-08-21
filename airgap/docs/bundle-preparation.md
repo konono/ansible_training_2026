@@ -67,31 +67,67 @@ cp /path/to/rhel-10.2-x86_64-kvm.qcow2 offline-resources/vm-images/
 
 ## Step 4: Windows 11 qcow2 イメージの入手（オプション）
 
-cocoonstack/windows リポジトリから Windows 11 qcow2 イメージを取得します。
+[cocoonstack/windows](https://github.com/cocoonstack/windows) リポジトリが、WinRM/SSH 設定済みの Windows 11 VM イメージを GitHub Container Registry (ghcr.io) に公開しています。
+
+このイメージは通常のコンテナイメージではなく、qcow2 ディスクイメージを OCI アーティファクトとして格納したものです。14GB のファイルを約 1.9GB × 8 パーツに分割して保存されており、ダウンロード後に結合する必要があります。
+
+### oras CLI のインストール
+
+`oras` (OCI Registry As Storage) は、コンテナレジストリから任意のファイル（コンテナイメージ以外も含む）を取得するための CLI ツールです。
 
 ```bash
-# oras CLI のインストール
-curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.2/oras_1.2.2_linux_amd64.tar.gz | tar xz -C /usr/local/bin/ oras
-
-# イメージのダウンロード（8パーツ、計14GB）
-mkdir -p offline-resources/vm-images/win11-parts/
-cd offline-resources/vm-images/win11-parts/
-oras pull ghcr.io/cocoonstack/windows/win11:25h2
-
-# パーツの結合
-cat *.part > ../windows-11-25h2.qcow2
-cd ..
-rm -rf win11-parts/
+curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.2/oras_1.2.2_linux_amd64.tar.gz \
+  | tar xz -C /usr/local/bin/ oras
+oras version  # 動作確認
 ```
 
-クレデンシャル（cocoonstack イメージに組み込み済み）:
+### イメージのダウンロードと結合
+
+```bash
+# 作業ディレクトリを作成
+mkdir -p offline-resources/vm-images/win11-parts/
+cd offline-resources/vm-images/win11-parts/
+
+# ダウンロード（9ファイル: 8パーツ + SHA256SUMS, 計 約14GB）
+oras pull ghcr.io/cocoonstack/windows/win11:25h2
+
+# ダウンロードされるファイル:
+#   windows-11-25h2.qcow2.00.qcow2.part  (1.9GB)
+#   windows-11-25h2.qcow2.01.qcow2.part  (1.9GB)
+#   ...
+#   windows-11-25h2.qcow2.07.qcow2.part  (756MB)
+#   SHA256SUMS
+
+# チェックサム検証
+sha256sum -c SHA256SUMS
+
+# パーツを結合して 1 つの qcow2 ファイルにする
+cat *.part > ../windows-11-25h2.qcow2
+
+# 作業ディレクトリを削除
+cd ..
+rm -rf win11-parts/
+
+# 結果を確認（約 14GB の qcow2 ファイル）
+ls -lh windows-11-25h2.qcow2
+```
+
+### cocoonstack イメージの仕様
+
+このイメージには以下が事前設定されています:
 
 | 項目 | 値 |
 |---|---|
+| OS | Windows 11 Pro (Build 26200) |
 | ユーザー | `cocoon` |
 | パスワード | `C@c#on160` |
-| WinRM | Basic 認証, ポート 5985 |
+| WinRM | Basic 認証, ポート 5985, AllowUnencrypted=True |
 | OpenSSH | ポート 22（デフォルトシェル: cmd.exe） |
+| AutoLogon | 有効（cocoon ユーザー） |
+| 仮想ディスク | 40GB (シンプロビジョニング) |
+
+> **注意**: Ansible から SSH 接続する場合、デフォルトシェルを PowerShell に変更する必要があります。
+> これは `win_podman` ロールの事前チェックタスクで自動設定されます。
 
 ## Step 5: バンドルの確認
 
