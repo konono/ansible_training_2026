@@ -121,9 +121,11 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	@echo "=== ディスク拡張 ==="
 	@for host in repo-server rhel-target; do \
 		echo "  $$host:"; \
-		ansible -i $(INVENTORY) $$host -m shell \
+		result=$$(ansible -i $(INVENTORY) $$host -m shell \
 			-a 'TMPDIR=/dev/shm growpart /dev/vda 3 2>/dev/null || true; xfs_growfs / 2>/dev/null || true; avail=$$(df --output=avail / | tail -1); echo "AVAIL_KB:$$avail"; [ "$$avail" -gt 10000000 ] && echo "DISK_OK" || echo "DISK_LOW"' \
-			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'AVAIL_KB|DISK_OK|DISK_LOW'; \
+			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1); \
+		echo "$$result" | grep -E 'AVAIL_KB|DISK_OK|DISK_LOW'; \
+		echo "$$result" | grep -q 'DISK_LOW' && { echo "ERROR: $$host のディスク空き容量が不足しています（10GB 未満）"; exit 1; } || true; \
 	done
 	@echo "=== DVD ISO → repo-server ==="
 	@ansible -i $(INVENTORY) repo-server -m copy \

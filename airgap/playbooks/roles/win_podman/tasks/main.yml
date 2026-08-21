@@ -8,10 +8,15 @@
   ansible.windows.win_shell: |
     $result = @{}
 
-    # Windows 機能
-    $features = @('Microsoft-Hyper-V-All', 'Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform')
+    # Windows 機能（WSL2 に必須の 2 機能 + Hyper-V はオプション）
+    $required = @('Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform')
+    $optional = @('Microsoft-Hyper-V-All')
     $missing_features = @()
-    foreach ($f in $features) {
+    foreach ($f in $required) {
+      $state = (Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction SilentlyContinue).State
+      if ($state -ne 'Enabled') { $missing_features += $f }
+    }
+    foreach ($f in $optional) {
       $state = (Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction SilentlyContinue).State
       if ($state -ne 'Enabled') { $missing_features += $f }
     }
@@ -45,9 +50,22 @@
   ansible.windows.win_shell: |
     $features = "{{ pre_check.missing_features }}".Split(',')
     $reboot = $false
+    $failed = @()
     foreach ($f in $features) {
       $result = Enable-WindowsOptionalFeature -Online -FeatureName $f -NoRestart -ErrorAction SilentlyContinue
-      if ($result.RestartNeeded) { $reboot = $true }
+      if ($result) {
+        if ($result.RestartNeeded) { $reboot = $true }
+      } else {
+        if ($f -eq 'Microsoft-Hyper-V-All') {
+          Write-Output "WARN: Hyper-V の有効化に失敗しました（ネスト仮想化環境ではオプション）"
+        } else {
+          $failed += $f
+        }
+      }
+    }
+    if ($failed.Count -gt 0) {
+      Write-Output "ERROR: 必須機能の有効化に失敗: $($failed -join ',')"
+      exit 1
     }
     if ($reboot) { Write-Output "REBOOT_REQUIRED" } else { Write-Output "DONE" }
   register: feature_enable

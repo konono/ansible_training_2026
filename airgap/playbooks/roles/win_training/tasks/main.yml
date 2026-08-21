@@ -22,7 +22,7 @@
 
 - name: コンテナイメージをロード
   ansible.windows.win_shell: |
-    $images = (podman images 2>&1) -join "`n"
+    $images = (podman images 2>$null) -join "`n"
     $has_ctrl = $images -match "training-controller"
     $has_node = $images -match "training-linux-node"
     if ($has_ctrl -and $has_node) {
@@ -31,11 +31,11 @@
     }
     if (-not $has_ctrl) {
       Write-Output "Loading controller image..."
-      podman load -i "{{ win_bundle_dir }}\container-images\training-controller.tar" 2>&1
+      podman load -i "{{ win_bundle_dir }}\container-images\training-controller.tar" 2>$null
     }
     if (-not $has_node) {
       Write-Output "Loading linux-node image..."
-      podman load -i "{{ win_bundle_dir }}\container-images\training-linux-node.tar" 2>&1
+      podman load -i "{{ win_bundle_dir }}\container-images\training-linux-node.tar" 2>$null
     }
     Write-Output "LOAD_COMPLETE"
   register: image_load

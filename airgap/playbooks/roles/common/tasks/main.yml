@@ -27,7 +27,10 @@
       fi
     done < checksums.sha256
     echo "RESULT: $pass/$total passed, $fail failed"
-    [ "$fail" -eq 0 ]
+    if [ "$total" -eq 0 ]; then
+      echo "WARN: checksums.sha256 と一致するファイルがありません"
+    fi
+    [ "$fail" -eq 0 ] && [ "$total" -gt 0 ]
   when: checksums_file.stat.exists
   changed_when: false
   register: checksum_result

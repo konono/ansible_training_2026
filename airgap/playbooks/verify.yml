@@ -65,6 +65,11 @@
 - name: 研修環境の動作確認（Windows）
   hosts: windows
   gather_facts: false
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/windows.yml
+
   tasks:
     - name: podman が動作しているか確認
       ansible.windows.win_shell: podman --version 2>$null
@@ -101,8 +106,8 @@
       ansible.builtin.raw: netstat -an | findstr "2220.*LISTENING"
       register: win_ssh_wait
       until: win_ssh_wait.rc == 0
-      retries: 6
-      delay: 5
+      retries: 30
+      delay: 10
       changed_when: false
 
     - name: 検証完了
