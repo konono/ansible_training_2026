@@ -23,9 +23,36 @@ Windows クライアント + Linux サーバー構成で、マルチユーザー
 
 ## 前提条件
 
-### 持ち込み資材
+### 持ち込み資材の準備（オンライン環境で実施）
 
-`airgap/` ディレクトリ一式（USB 等で転送済み）。`./offline-validation.sh` でバンドルの完全性を確認できます。
+お客様環境に持ち込む前に、インターネット接続のある RHEL 10 マシンでバンドルを作成します。
+
+```bash
+# 1. リポジトリをクローン
+git clone https://github.com/konono/ansible_training_2026.git
+cd ansible_training_2026/airgap
+
+# 2. バンドル作成（コンテナイメージビルド + パッケージダウンロード）
+./prepare-offline-bundle.sh
+
+# 3. RHEL 10 DVD ISO を入手して配置
+#    Red Hat カスタマーポータル: https://access.redhat.com/downloads/content/rhel
+#    ※ BaseOS + AppStream を含む DVD ISO（Boot ISO は不可）
+mkdir -p offline-resources/iso/
+cp /path/to/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
+
+# 4. バンドルの完全性を確認
+./offline-validation.sh
+
+# 5. airgap/ ディレクトリ全体を USB 等にコピー
+cp -r ../airgap/ /mnt/usb/
+```
+
+> 詳細は [バンドル作成ガイド](bundle-preparation.md) を参照してください。
+
+### 持ち込み資材の確認
+
+`./offline-validation.sh` でバンドルの完全性を確認できます。
 
 ### マシン要件
 
