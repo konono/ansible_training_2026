@@ -1,4 +1,49 @@
 ---
+- name: airgap コード配置ディレクトリを作成
+  ansible.builtin.file:
+    path: /opt/airgap
+    state: directory
+    mode: '0755'
+
+- name: 採番スクリプトを配置
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/allocate.py"
+    dest: /opt/airgap/scripts/allocate.py
+    mode: '0755'
+
+- name: デプロイスクリプトを配置
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/opt/airgap/{{ item.dest }}"
+    mode: '0755'
+  loop:
+    - { src: "{{ playbook_dir }}/../deploy-training.sh", dest: "deploy-training.sh" }
+    - { src: "{{ playbook_dir }}/../destroy-training.sh", dest: "destroy-training.sh" }
+
+- name: Playbook・ロール・設定を配置
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/"
+    dest: /opt/airgap/playbooks/
+    mode: preserve
+
+- name: インベントリを配置
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../inventory/"
+    dest: /opt/airgap/inventory/
+    mode: preserve
+
+- name: group_vars を配置
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../group_vars/"
+    dest: /opt/airgap/group_vars/
+    mode: preserve
+
+- name: ansible.cfg を配置
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../ansible.cfg"
+    dest: /opt/airgap/ansible.cfg
+    mode: '0644'
+
 - name: リポジトリサーバーが設定されていることを確認
   ansible.builtin.assert:
     that:
