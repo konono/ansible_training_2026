@@ -6,17 +6,19 @@ Windows クライアント + Linux サーバー構成で、マルチユーザー
 ## 構成図
 
 ```
-[管理者PC]                       [お客様 airgap 環境]
-  │                               ├── リポジトリサーバー (RHEL 10)
-  │  USB 等で airgap/ を持ち込み   │     └── DVD ISO → nginx HTTP 配信
-  └──────────────────────────────>├── Linux 演習サーバー (RHEL 10)
+[管理者 PC / USB]                [お客様 airgap 環境]
+  │                               ├── bastion (RHEL 10) ← Ansible コントローラ
+  │  airgap/ を持ち込み            │     └── ansible-playbook を実行
+  └──────────────────────────────>├── repository (RHEL 10)
+                                  │     └── DVD ISO → nginx HTTP 配信
+                                  ├── training (RHEL 10)
                                   │     ├── podman + コンテナイメージ
-                                  │     ├── /opt/airgap/ (Playbook・スクリプト)
+                                  │     ├── /opt/airgap/ (スクリプト)
                                   │     ├── user1 環境 (port 2201)
                                   │     ├── user2 環境 (port 2202)
                                   │     └── ...
                                   └── Windows クライアント × N 台
-                                        └── SSH で Linux に接続して演習
+                                        └── SSH で training に接続して演習
 ```
 
 ## 前提条件
@@ -29,35 +31,66 @@ Windows クライアント + Linux サーバー構成で、マルチユーザー
 
 | 役割 | OS | CPU | メモリ | ディスク | 台数 |
 |---|---|---|---|---|---|
-| リポジトリサーバー | RHEL 10 | 2+ | 2GB+ | 20GB+ (ISO 11GB) | 1 |
-| Linux 演習サーバー | RHEL 10 | 4+ | 受講者数 × 1GB + 4GB | 40GB+ | 1 |
-| Windows クライアント | Windows 10/11 | - | - | - | 受講者数 |
+| bastion（コントローラ） | RHEL 10 | 2+ | 4GB+ | 40GB+ | 1 |
+| repository（リポジトリサーバー） | RHEL 10 | 2+ | 2GB+ | 20GB+ (ISO 11GB) | 1 |
+| training（Linux 演習サーバー） | RHEL 10 | 4+ | 受講者数 × 1GB + 4GB | 40GB+ | 1 |
+| Windows クライアント | Windows 10/11 | 2+ | 4GB+ | — | 受講者数 |
 
 > **メモリ目安**: 1 環境（5 コンテナ）あたり約 100MB。10 人なら約 5GB で十分。
+>
+> **注意**: bastion と repository は同一マシンで兼用可能です。
 
-すべてのマシンが同一ネットワーク上にあり、SSH で相互接続可能であること。
+### ポート要件（セキュリティグループ）
+
+| マシン | IN | OUT |
+|---|---|---|
+| bastion | 22/tcp（管理者 SSH） | 22/tcp（全マシンへ） |
+| repository | 22/tcp（bastion から）, 80/tcp（training から） | — |
+| training | 22/tcp（bastion + Windows から）, 2201-2299/tcp（受講者ごとの SSH） | 80/tcp（repository へ） |
+| Windows | 22/tcp（bastion から）, 3389/tcp（RDP） | 22, 2201-2299/tcp（training へ） |
+
+すべてのマシンが同一ネットワーク上にあること。インターネット接続は不要（airgap）。
 
 ---
 
 ## 管理者の作業
 
-### Step 1: コントローラのセットアップ
+### Step 1: bastion への資材転送
 
-リポジトリサーバーまたは Linux 演習サーバーを Ansible コントローラとして使います。
+オンライン環境（または USB）から bastion に `airgap/` 一式を転送します。
 
+**オンライン環境にスクリプトがある場合:**
 ```bash
-# USB から airgap/ を Linux サーバーにコピー
-cp -r /mnt/usb/airgap/ /opt/airgap/
-
-# DVD ISO をコピー
-cp /mnt/usb/airgap/offline-resources/iso/rhel-10.2-x86_64-dvd.iso /opt/rhel10.iso
-
-# コントローラセットアップ（ansible-core + コレクション + sshpass をオフラインインストール）
-cd /opt/airgap
-./setup-controller.sh /opt/rhel10.iso
+cd airgap/
+./transfer-to-bastion.sh <bastion の IP> <パスワード>
 ```
 
-### Step 2: インベントリの編集
+**USB から手動でコピーする場合:**
+```bash
+# bastion 上で実行
+cp -r /mnt/usb/airgap/ /opt/airgap/
+```
+
+### Step 2: bastion のセットアップ
+
+bastion に SSH してコントローラをセットアップします。
+
+```bash
+ssh root@<bastion の IP>
+cd /opt/airgap
+./setup-controller.sh
+```
+
+> ISO が `offline-resources/iso/` にあれば自動検出します。別の場所にある場合は引数で指定: `./setup-controller.sh /path/to/rhel10.iso`
+
+このスクリプトが自動で行うこと:
+1. DVD ISO をマウントしてローカルリポジトリを設定
+2. `gcc`, `make`, `python3-pip` 等の前提パッケージをインストール
+3. `ansible-core` を pip パッケージからオフラインインストール
+4. `sshpass` をソースからビルド
+5. Ansible コレクションをインストール
+
+### Step 3: インベントリの編集
 
 お客様環境の IP アドレスとパスワードに合わせて編集します。
 
@@ -74,40 +107,11 @@ all:
     repo_server:
       hosts:
         repo-server:
-          ansible_host: <リポジトリサーバーの IP>
+          ansible_host: <repository の IP>
     rhel:
       hosts:
         rhel-target:
-          ansible_host: <Linux 演習サーバーの IP>
-```
-
-### Step 3: リソースの配置
-
-```bash
-cd /opt/airgap
-
-# DVD ISO → リポジトリサーバー
-scp offline-resources/iso/rhel-10.2-x86_64-dvd.iso root@<repo-server>:/opt/rhel10.iso
-
-# Windows パッケージ → リポジトリサーバー
-ssh root@<repo-server> 'mkdir -p /opt/airgap-bundle/packages'
-scp -r offline-resources/packages/ root@<repo-server>:/opt/airgap-bundle/packages/
-
-# バンドル → Linux 演習サーバー
-ssh root@<rhel-target> 'mkdir -p /opt/airgap-bundle/{container-images,binaries,training-materials,pip-packages}'
-
-scp offline-resources/container-images/training-controller.tar \
-    offline-resources/container-images/training-linux-node.tar \
-    root@<rhel-target>:/opt/airgap-bundle/container-images/
-
-scp offline-resources/binaries/docker-compose-linux-x86_64 \
-    root@<rhel-target>:/opt/airgap-bundle/binaries/
-
-scp offline-resources/training-materials/ansible_training_2026.tar.gz \
-    root@<rhel-target>:/opt/airgap-bundle/training-materials/
-
-scp -r offline-resources/pip-packages/ \
-    root@<rhel-target>:/opt/airgap-bundle/pip-packages/
+          ansible_host: <training の IP>
 ```
 
 ### Step 4: Playbook の実行
@@ -115,13 +119,17 @@ scp -r offline-resources/pip-packages/ \
 ```bash
 cd /opt/airgap
 
-# 1. リポジトリサーバーの構築
+# 1. リソース配置（DVD ISO, コンテナイメージ等を各サーバーに配布）
+ansible-playbook -i inventory/hosts.yml playbooks/distribute-resources.yml
+
+# 2. リポジトリサーバーの構築
 ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml
 
-# 2. Linux 演習サーバーの構築
-#    - podman + docker-compose のインストール
+# 3. Linux 演習サーバーの構築
+#    - podman + docker-compose インストール
+#    - ansible-core インストール（deploy-training.sh 用）
 #    - コンテナイメージのロード
-#    - deploy-training.sh 等のスクリプト配置
+#    - スクリプト・Playbook の配置
 #    - inotify 上限拡張（マルチユーザー対応）
 ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
 ```
@@ -129,15 +137,19 @@ ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
 ### Step 5: 構築後の検証
 
 ```bash
-# リポジトリサーバー
-curl -s -o /dev/null -w '%{http_code}' http://<repo-server>/repo/BaseOS/repodata/repomd.xml
+# リポジトリサーバーの確認
+curl -s -o /dev/null -w '%{http_code}' http://<repository>/repo/BaseOS/repodata/repomd.xml
 # → 200
 
-# Linux 演習サーバーにスクリプトが配置されているか
-ssh root@<rhel-target> 'ls /opt/airgap/deploy-training.sh'
+# training サーバーにスクリプトが配置されているか
+ssh root@<training> 'ls /opt/airgap/deploy-training.sh'
 
-# 割当状況の確認
-ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rhel-target
+# テスト環境を 1 つ作ってみる
+ssh root@<training> 'cd /opt/airgap && ./deploy-training.sh --ip test --name test'
+# → ssh -p 2201 root@<training> で接続確認
+
+# テスト環境を削除
+ssh root@<training> 'cd /opt/airgap && ./destroy-training.sh --ip test'
 ```
 
 ### Step 6: Windows クライアントの事前設定
@@ -148,7 +160,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rh
 
 PowerShell を管理者で開き:
 ```powershell
-# OpenSSH Client が有効か確認
 Get-WindowsCapability -Online -Name OpenSSH.Client* | Select-Object State
 # "Installed" でなければ:
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
@@ -158,11 +169,8 @@ Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 
 バンドル内のインストーラを使用:
 ```powershell
-# VSCode
-& "C:\airgap-bundle\VSCodeSetup-x64.exe" /VERYSILENT /NORESTART /MERGETASKS=addtopath
-
-# Remote-SSH 拡張
-code --install-extension "C:\airgap-bundle\ms-vscode-remote.remote-ssh.vsix"
+& "\\<bastion>\share\packages\VSCodeSetup-x64.exe" /VERYSILENT /NORESTART /MERGETASKS=addtopath
+code --install-extension "\\<bastion>\share\packages\ms-vscode-remote.remote-ssh.vsix"
 ```
 
 ---
@@ -174,13 +182,13 @@ code --install-extension "C:\airgap-bundle\ms-vscode-remote.remote-ssh.vsix"
 **PowerShell を開いて以下を実行:**
 
 ```powershell
-# 1. Linux 演習サーバーに SSH 接続
-ssh root@<Linux 演習サーバーの IP>
+# 1. training サーバーに SSH 接続
+ssh root@<training の IP>
 ```
 パスワード: `<管理者に確認>`
 
 ```bash
-# 2. 演習環境を構築（IP は自動取得されます）
+# 2. 演習環境を構築（IP は SSH 接続元から自動取得されます）
 cd /opt/airgap
 ./deploy-training.sh
 ```
@@ -202,15 +210,13 @@ cd /opt/airgap
 **新しい PowerShell ウィンドウ**を開いて:
 
 ```powershell
-ssh -o StrictHostKeyChecking=no -p 2201 root@<Linux 演習サーバーの IP>
+ssh -o StrictHostKeyChecking=no -p <表示されたポート番号> root@<training の IP>
 ```
 パスワード: `password`
 
-（ポート番号は `deploy-training.sh` の出力に表示された番号を使用）
-
 **VSCode で接続する場合:**
 1. `Ctrl+Shift+P` → `Remote-SSH: Connect to Host`
-2. `root@<IP> -p 2201` と入力
+2. `root@<training の IP> -p <ポート番号>` と入力
 3. パスワード: `password`
 
 ### 演習の開始
@@ -221,42 +227,66 @@ controller にログインしたら演習開始です:
 # Ansible の確認
 ansible --version
 
-# 作業ディレクトリへ移動
+# 演習 1 の作業ディレクトリ
 cd ~/basic-intro
 
-# インベントリ作成（演習 1 の内容）
-# ※ ノードの IP アドレスは各自の環境に合わせて設定
-#    deploy-training.sh の出力で表示された subnet を確認
+# ansible.cfg を作成
+cat > ansible.cfg << 'EOF'
+[defaults]
+inventory = inventory.yml
+host_key_checking = False
+EOF
+
+# inventory.yml を作成（IP はデプロイ時の表示を参照）
+cat > inventory.yml << 'EOF'
+all:
+  children:
+    web:
+      hosts:
+        node1: {ansible_host: 172.20.<user_id>.11}
+        node2: {ansible_host: 172.20.<user_id>.12}
+    db:
+      hosts:
+        node3: {ansible_host: 172.20.<user_id>.13}
+    lb:
+      hosts:
+        lb: {ansible_host: 172.20.<user_id>.14}
+  vars:
+    ansible_user: root
+    ansible_password: password
+EOF
+
+# 接続テスト
+ansible all -m ping
 ```
+
+> `<user_id>` は `deploy-training.sh` の出力で確認できます。例: user_id=1 なら `172.20.1.11`
 
 ### 演習環境の削除・再構築
 
 ```bash
-# Linux 演習サーバーに SSH 接続して実行
-ssh root@<Linux 演習サーバーの IP>
+# training サーバーに SSH 接続して実行
+ssh root@<training の IP>
 cd /opt/airgap
 ./destroy-training.sh      # 環境削除
-./deploy-training.sh       # 再構築（同じ user_id が再利用されます）
+./deploy-training.sh       # 再構築（同じ user_id で再利用されます）
 ```
 
 ---
 
 ## トラブルシューティング
 
-### `deploy-training.sh` でエラーが出る
+### `deploy-training.sh` で「接続元 IP を特定できません」
 
-```
-エラー: 接続元 IP を特定できません。
-```
-→ SSH 経由でログインしてから実行してください。または `--ip` で手動指定:
+SSH 経由でログインしてから実行してください。直接ログインした場合は `--ip` で手動指定:
 ```bash
-./deploy-training.sh --ip 192.168.1.31
+./deploy-training.sh --ip 192.168.1.31 --name 山田太郎
 ```
 
 ### SSH ポートに接続できない
 
 ```bash
-# Linux 演習サーバー上で確認
+# training サーバー上で確認
 ss -tlnp | grep 22XX              # ポートが LISTENING か
 podman ps | grep userXX            # コンテナが Up か
 podman start userXX_controller     # 停止していたら起動
@@ -267,7 +297,7 @@ podman start userXX_controller     # 停止していたら起動
 `inotify` の上限に達している可能性:
 ```bash
 cat /proc/sys/fs/inotify/max_user_instances
-# 128 以下なら不足。以下で拡張:
+# 128 以下なら不足:
 echo 1024 > /proc/sys/fs/inotify/max_user_instances
 # rhel-setup.yml を再実行すれば永続化される
 ```
@@ -276,21 +306,29 @@ echo 1024 > /proc/sys/fs/inotify/max_user_instances
 
 ```bash
 # controller 内で確認
-podman exec userXX_node1 dnf repolist
+dnf repolist
 # airgap-baseos と airgap-appstream が表示されること
 ```
 
+表示されない場合、リポジトリ設定に問題があります。`./destroy-training.sh` → `./deploy-training.sh` で再構築してください。
+
 ### 割当状況の確認（管理者）
 
+bastion で:
 ```bash
 cd /opt/airgap
 ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rhel-target
 ```
 
+または training サーバーで直接:
+```bash
+python3 /opt/airgap/scripts/allocate.py --action status | python3 -m json.tool
+```
+
 ### 全環境の一括リセット（管理者）
 
 ```bash
-ssh root@<rhel-target>
+ssh root@<training>
 podman stop -a; podman rm -af; podman network prune -f
 rm -f /opt/training/allocations.json
 rm -rf /opt/training/user*
