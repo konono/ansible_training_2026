@@ -13,25 +13,23 @@
   changed_when: false
   failed_when: false
 
-- name: podman のインストール — リポジトリサーバー経由
+- name: リポジトリサーバーが設定されていることを確認
+  ansible.builtin.assert:
+    that:
+      - repo_server_ip | default('') | length > 0
+    fail_msg: >-
+      repo_server_ip が未設定です。
+      インベントリに repo_server グループを追加し、リポジトリサーバーを設定してください。
+
+- name: HTTP リポジトリを設定
+  ansible.builtin.include_role:
+    name: repository_management
+
+- name: podman をインストール
+  ansible.builtin.dnf:
+    name: podman
+    state: present
   when: podman_check.rc != 0
-  block:
-    - name: リポジトリサーバーが設定されていることを確認
-      ansible.builtin.assert:
-        that:
-          - repo_server_ip | default('') | length > 0
-        fail_msg: >-
-          repo_server_ip が未設定です。
-          インベントリに repo_server グループを追加し、リポジトリサーバーを設定してください。
-
-    - name: HTTP リポジトリを設定
-      ansible.builtin.include_role:
-        name: repository_management
-
-    - name: podman を HTTP リポジトリからインストール
-      ansible.builtin.dnf:
-        name: podman
-        state: present
 
 - name: podman バージョンを確認
   ansible.builtin.command: podman --version
