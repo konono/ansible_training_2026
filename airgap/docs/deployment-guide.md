@@ -94,18 +94,37 @@ cp -r ../airgap/ /mnt/usb/
 
 ### Step 1: bastion への資材転送
 
-オンライン環境（または USB）から bastion に `airgap/` 一式を転送します。
+USB 等で持ち込んだ資材を bastion に転送・展開します。
 
-**オンライン環境にスクリプトがある場合:**
+**方法 A: オンライン環境から直接転送する場合**
 ```bash
+# オンライン環境で実行
 cd airgap/
 ./transfer-to-bastion.sh <bastion の IP> <パスワード>
 ```
 
-**USB から手動でコピーする場合:**
+**方法 B: USB から手動でコピーする場合**
+
+USB に以下の 2 つが入っている想定です:
+- `airgap/` ディレクトリ（Playbook・スクリプト・設定）— git リポジトリから取得
+- `airgap-offline-resources.tar.gz`（バイナリ資材）— `prepare-offline-bundle.sh` で生成
+
 ```bash
 # bastion 上で実行
+
+# Playbook・スクリプトをコピー
 cp -r /mnt/usb/airgap/ /opt/airgap/
+
+# バイナリ資材を展開
+cd /opt/airgap
+tar xzf /mnt/usb/airgap-offline-resources.tar.gz
+
+# DVD ISO が別ファイルの場合
+mkdir -p offline-resources/iso
+cp /mnt/usb/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
+
+# 資材の完全性を確認
+./offline-validation.sh
 ```
 
 ### Step 2: bastion のセットアップ

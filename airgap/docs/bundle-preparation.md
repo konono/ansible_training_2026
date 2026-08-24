@@ -78,14 +78,39 @@ sha256sum -c checksums.sha256
 > お客様環境の VM は VMware, Hyper-V, 物理マシン等で個別に用意します。
 > 開発テスト用の KVM VM イメージの入手方法は [開発者ガイド](development-guide.md) を参照してください。
 
-## Step 4: 持ち込み
+## Step 4: 持ち込み用に固める
 
-`airgap/` ディレクトリ全体を USB ドライブ等にコピーしてお客様環境に転送します。
+バイナリ資材を tar で固め、Playbook コードと合わせて USB にコピーします。
 
 ```bash
-cp -r /path/to/ansible_training_2026/airgap/ /mnt/usb/
+cd /path/to/ansible_training_2026
+
+# バイナリ資材を tar.gz に（vm-images は開発用なので除外）
+tar czf airgap-offline-resources.tar.gz \
+  -C airgap \
+  --exclude='offline-resources/vm-images' \
+  offline-resources/
+
+ls -lh airgap-offline-resources.tar.gz
+# → 約 13GB（ISO 11GB + その他 2GB）
+
+# USB にコピー
+cp airgap-offline-resources.tar.gz /mnt/usb/
+cp -r airgap/ /mnt/usb/airgap/   # Playbook・スクリプト・ドキュメント
 sync
 umount /mnt/usb
+```
+
+USB の内容:
+```
+/mnt/usb/
+├── airgap/                         # Playbook・スクリプト（git リポジトリの内容）
+│   ├── setup-controller.sh
+│   ├── deploy-training.sh
+│   ├── playbooks/
+│   ├── docs/
+│   └── ...（offline-resources/ は空）
+└── airgap-offline-resources.tar.gz # バイナリ資材（tar 圧縮）
 ```
 
 持ち込み後の構築手順は [構築ガイド](deployment-guide.md) を参照してください。
