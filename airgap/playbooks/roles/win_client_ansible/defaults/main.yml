@@ -1,3 +1,0 @@
----
-win_python_installer: "{{ win_bundle_dir }}/python-3.12.10-amd64.exe"
-win_pip_packages_dir: "{{ win_bundle_dir }}/pip-packages-windows"

@@ -25,7 +25,6 @@
 
   roles:
     - win_client_ssh
-    - win_client_ansible
     - win_client_vscode
 
   post_tasks:
@@ -40,11 +39,8 @@
             [VSCode]     Ctrl+Shift+P → "Remote-SSH: Connect to Host" → "training"
             パスワード: {{ controller_password }}
 
-          ■ Ansible コマンド（PowerShell から実行可能）:
-            ansible --version
-            ansible -i inventory.yml all -m ping
-
-          ■ 研修環境の構築（このWindows端末から実行可能）:
-            cd C:\path\to\airgap
-            ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
+          ■ 研修環境の構築:
+            ssh root@<training サーバー IP>
+            cd /opt/airgap
+            ./deploy-training.sh
           ========================================

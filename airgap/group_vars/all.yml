@@ -8,9 +8,4 @@ rhel_installer_iso: /opt/rhel10.iso
 
 controller_image: "training-controller:latest"
 node_image: "training-linux-node:latest"
-windows_image: "dockurr/windows:latest"
-enable_windows: false
-
-container_network_subnet: "172.20.0.0/24"
-controller_ip: "172.20.0.10"
 controller_ssh_port: 2220

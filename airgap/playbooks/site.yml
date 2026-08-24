@@ -5,5 +5,5 @@
 - name: Airgap 研修環境セットアップ（RHEL）
   ansible.builtin.import_playbook: rhel-setup.yml
 
-- name: Airgap 研修環境セットアップ（Windows）
-  ansible.builtin.import_playbook: windows-setup.yml
+- name: Windows クライアントセットアップ
+  ansible.builtin.import_playbook: windows-client-setup.yml

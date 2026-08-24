@@ -150,14 +150,6 @@
   ansible.builtin.debug:
     msg: "{{ loaded_images.stdout_lines }}"
 
-- name: Windowsイメージをロード（有効な場合）
-  ansible.builtin.command:
-    cmd: podman load -i {{ container_images_dir }}/dockurr-windows.tar
-  register: win_load
-  changed_when: "'Loaded image' in win_load.stdout"
-  when: enable_windows | default(false)
-  failed_when: false
-
 - name: セットアップ完了
   ansible.builtin.debug:
     msg: |

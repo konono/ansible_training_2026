@@ -19,10 +19,11 @@ airgap ツールキットの開発・テスト・改修に関するガイドで�
 │  │  /packages/  │          │ │ node1 (.11)             │ │     │
 │  └──────────────┘          │ │ node2 (.12)             │ │     │
 │                            │ │ node3 (.13)             │ │     │
-│  win11-target (.20)        │ │ lb (.14)                │ │     │
-│  ┌──────────────┐          │ └─────────────────────────┘ │     │
-│  │ WSL2+Podman  │          └─────────────────────────────┘     │
-│  │ (SSH接続)    │                                              │
+│                            │ │ lb (.14)                │ │     │
+│                            │ └─────────────────────────┘ │     │
+│  Windows クライアント (.20) └─────────────────────────────┘     │
+│  ┌──────────────┐                                              │
+│  │ SSH + VSCode │─── ssh -p 220X root@rhel-target              │
 │  └──────────────┘                                              │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -36,9 +37,10 @@ airgap ツールキットの開発・テスト・改修に関するガイドで�
 | `repository_management` | rhel-target | HTTP リポジトリをクライアントに設定 |
 | `common` | rhel-target | チェックサム検証 |
 | `rhel_podman` | rhel-target | podman + docker-compose インストール |
-| `rhel_training` | rhel-target | イメージロード・コンテナ起動・コンテナ内 repo 設定 |
-| `win_podman` | win11-target | WSL2 + Podman + docker-compose |
-| `win_training` | win11-target | イメージロード・コンテナ起動・コンテナ内 repo 設定 |
+| `rhel_training` | rhel-target | 演習サーバー基盤セットアップ（イメージロード・スクリプト配置） |
+| `rhel_training_multi` | rhel-target | マルチユーザー環境デプロイ（per-user コンテナ起動・repo 設定） |
+| `win_client_ssh` | windows_clients | Windows OpenSSH 設定 |
+| `win_client_vscode` | windows_clients | VSCode + Remote-SSH インストール |
 
 ### Playbook 実行順序
 
@@ -48,8 +50,8 @@ site.yml
   │     → setup_rhel_image_repository → create_local_repository
   ├── rhel-setup.yml (hosts: rhel)
   │     → common → rhel_podman → rhel_training
-  └── windows-setup.yml (hosts: windows)
-        → win_podman → win_training
+  └── windows-client-setup.yml (hosts: windows_clients)
+        → win_client_ssh → win_client_vscode
 ```
 
 ## テスト用 VM イメージの入手
@@ -109,7 +111,7 @@ cocoonstack イメージの仕様:
 | OpenSSH | ポート 22（デフォルトシェル: cmd.exe） |
 | 仮想ディスク | 40GB (シンプロビジョニング) |
 
-> Ansible SSH 接続時のデフォルトシェル変更は `win_podman` ロールが自動設定します。
+> Ansible SSH 接続時のシェル設定は `group_vars/windows_clients.yml` で定義されています。
 
 ## テスト環境（Makefile）
 

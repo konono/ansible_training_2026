@@ -1,8 +1,6 @@
 ---
 # Windows 専用インベントリ（統合インベントリ inventory/hosts.yml の使用を推奨）
-# 単体で使う場合は repo_server_ip の指定が必要:
-#   ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-setup.yml \
-#     -e "repo_server_ip=<リポジトリサーバーのIP>"
+#   ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-client-setup.yml
 all:
   children:
     windows:

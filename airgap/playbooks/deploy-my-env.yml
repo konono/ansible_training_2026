@@ -7,11 +7,16 @@
   vars_files:
     - ../group_vars/all.yml
 
-  vars:
-    client_ip: "{{ lookup('pipe', 'echo $SSH_CLIENT | cut -d\" \" -f1') | default(ansible_env.SSH_CLIENT.split()[0], true) | default('unknown') }}"
-    client_hostname: "{{ lookup('pipe', 'hostname') | default('unknown') }}"
-
   pre_tasks:
+    - name: client_ip が指定されていることを確認
+      ansible.builtin.assert:
+        that:
+          - client_ip is defined
+          - client_ip | length > 0
+        fail_msg: >
+          client_ip が未指定です。deploy-training.sh 経由で実行してください。
+          手動実行: ansible-playbook ... -e client_ip=<IP>
+
     - name: 採番スクリプトの存在を確認
       ansible.builtin.stat:
         path: "{{ allocate_script | default('/opt/airgap/scripts/allocate.py') }}"
