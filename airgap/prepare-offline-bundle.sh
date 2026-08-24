@@ -20,6 +20,7 @@ WSL_VERSION="${WSL_VERSION:-2.4.13}"
 PODMAN_MACHINE_TAG="${PODMAN_MACHINE_TAG:-5.5}"
 SKIP_WINDOWS="${SKIP_WINDOWS:-false}"
 SEVENZIP_VERSION="${SEVENZIP_VERSION:-2301}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.12.10}"
 
 check_prerequisites() {
     log_info "前提条件を確認中..."
@@ -183,6 +184,19 @@ download_windows_packages() {
         "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-vscode-remote/vsextensions/remote-ssh/latest/vspackage" \
         -o "$BUNDLE_DIR/packages/ms-vscode-remote.remote-ssh.vsix" || \
         log_warn "Remote-SSH vsix ダウンロード失敗"
+
+    log_info "Python Windows インストーラをダウンロード中..."
+    curl -fsSL -L \
+        "https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe" \
+        -o "$BUNDLE_DIR/packages/python-${PYTHON_VERSION}-amd64.exe" || \
+        log_warn "Python Windows インストーラのダウンロード失敗"
+
+    log_info "Windows 向け pip パッケージをダウンロード中..."
+    mkdir -p "$BUNDLE_DIR/pip-packages-windows"
+    python3 -m pip download --only-binary=:all: --platform win_amd64 --python-version 3.12 \
+        -d "$BUNDLE_DIR/pip-packages-windows/" \
+        ansible-core pywinrm 2>/dev/null || \
+        log_warn "Windows pip パッケージのダウンロード失敗"
 
     log_info "Phase 3.5 完了"
 }

@@ -2,7 +2,8 @@
 - name: OpenSSH Client が利用可能か確認
   ansible.windows.win_shell: |
     if (Get-Command ssh -ErrorAction SilentlyContinue) {
-      Write-Output "AVAILABLE"
+      $sshPath = (Get-Command ssh).Source
+      Write-Output "AVAILABLE at $sshPath"
     } else {
       $cap = Get-WindowsCapability -Online -Name OpenSSH.Client* 2>$null
       Write-Output $cap.State
@@ -16,6 +17,19 @@
     Write-Output "ENABLED"
   when: "'AVAILABLE' not in ssh_client_check.stdout and 'Installed' not in ssh_client_check.stdout"
   register: ssh_enable
+
+- name: OpenSSH が PowerShell の PATH に含まれていることを確認
+  ansible.windows.win_shell: |
+    $sshDir = "$env:SystemRoot\System32\OpenSSH"
+    $path = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    if ($path -notlike "*$sshDir*") {
+      [Environment]::SetEnvironmentVariable("Path", "$path;$sshDir", "Machine")
+      Write-Output "ADDED_TO_PATH"
+    } else {
+      Write-Output "ALREADY_IN_PATH"
+    }
+  register: ssh_path
+  changed_when: "'ADDED_TO_PATH' in ssh_path.stdout | default('')"
 
 - name: .ssh ディレクトリを作成
   ansible.windows.win_shell: |

@@ -91,6 +91,8 @@ fi
 check_file "packages/chocolatey.nupkg" "Chocolatey nupkg"    "false"
 check_file "packages/VSCodeSetup-x64.exe" "VSCode インストーラ"    "false"
 check_file "packages/ms-vscode-remote.remote-ssh.vsix" "Remote-SSH 拡張"    "false"
+check_file "packages/python-3.12.10-amd64.exe" "Python Windows インストーラ" "false"
+check_dir_notempty "pip-packages-windows" "Windows 向け pip パッケージ"    "false"
 echo ""
 
 # --- DVD ISO ---

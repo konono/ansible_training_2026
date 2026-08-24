@@ -1,0 +1,96 @@
+---
+# --- Python ---
+- name: Python がインストール済みか確認
+  ansible.windows.win_shell: |
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+      python --version 2>$null
+      Write-Output "INSTALLED"
+    } else {
+      Write-Output "NOT_INSTALLED"
+    }
+  register: python_check
+  changed_when: false
+
+- name: Python インストーラの存在を確認
+  ansible.windows.win_stat:
+    path: "{{ win_python_installer }}"
+  register: python_installer
+  when: "'NOT_INSTALLED' in python_check.stdout"
+
+- name: Python をインストール
+  ansible.windows.win_package:
+    path: "{{ win_python_installer }}"
+    arguments: /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
+    state: present
+    expected_return_code: [0, 1638, 3010]
+  when:
+    - "'NOT_INSTALLED' in python_check.stdout"
+    - python_installer.stat.exists | default(false)
+  register: python_install
+
+- name: Python インストール後の PATH 更新
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    python --version 2>$null
+  register: python_ver
+  changed_when: false
+
+- name: Python バージョンを表示
+  ansible.builtin.debug:
+    msg: "{{ python_ver.stdout | default('unknown') | trim }}"
+
+# --- ansible-core ---
+- name: ansible がインストール済みか確認
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    if (Get-Command ansible -ErrorAction SilentlyContinue) {
+      ansible --version 2>$null | Select-Object -First 1
+      Write-Output "INSTALLED"
+    } else {
+      Write-Output "NOT_INSTALLED"
+    }
+  register: ansible_check
+  changed_when: false
+
+- name: pip パッケージディレクトリの存在を確認
+  ansible.windows.win_stat:
+    path: "{{ win_pip_packages_dir }}"
+  register: pip_dir
+  when: "'NOT_INSTALLED' in ansible_check.stdout"
+
+- name: ansible-core をオフラインインストール
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    python -m pip install --no-index --find-links="{{ win_pip_packages_dir }}" ansible-core pywinrm 2>$null
+    Write-Output "PIP_DONE"
+  register: ansible_install
+  when:
+    - "'NOT_INSTALLED' in ansible_check.stdout"
+    - pip_dir.stat.exists | default(false)
+  changed_when: "'PIP_DONE' in ansible_install.stdout | default('')"
+
+- name: Ansible コレクションをインストール
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    $collectionsDir = "{{ win_bundle_dir }}/ansible-collections"
+    if (Test-Path $collectionsDir) {
+      Get-ChildItem "$collectionsDir/*.tar.gz" | ForEach-Object {
+        ansible-galaxy collection install $_.FullName --force 2>$null | Select-Object -Last 1
+      }
+      Write-Output "COLLECTIONS_DONE"
+    } else {
+      Write-Output "NO_COLLECTIONS"
+    }
+  register: collections_install
+  changed_when: "'COLLECTIONS_DONE' in collections_install.stdout | default('')"
+
+- name: Ansible バージョンを表示
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    ansible --version 2>$null | Select-Object -First 1
+  register: ansible_ver
+  changed_when: false
+
+- name: Ansible 情報を表示
+  ansible.builtin.debug:
+    msg: "{{ ansible_ver.stdout | default('ansible not found') | trim }}"

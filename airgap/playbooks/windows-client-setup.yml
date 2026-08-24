@@ -24,8 +24,9 @@
         fail_msg: "このPlaybookはWindows OSでのみ実行可能です"
 
   roles:
-    - win_client_vscode
     - win_client_ssh
+    - win_client_ansible
+    - win_client_vscode
 
   post_tasks:
     - name: セットアップ完了メッセージ
@@ -34,15 +35,16 @@
           ========================================
           Windows クライアントのセットアップが完了しました！
 
-          研修環境への接続方法:
-
-          [ターミナルから]
-            ssh training
-            または: ssh -p {{ controller_ssh_port }} {{ controller_user }}@{{ rhel_target_ip }}
+          ■ 研修環境への接続:
+            [ターミナル]  ssh training
+            [VSCode]     Ctrl+Shift+P → "Remote-SSH: Connect to Host" → "training"
             パスワード: {{ controller_password }}
 
-          [VSCode から]
-            1. Ctrl+Shift+P → "Remote-SSH: Connect to Host"
-            2. "training" を選択
-            3. パスワード入力: {{ controller_password }}
+          ■ Ansible コマンド（PowerShell から実行可能）:
+            ansible --version
+            ansible -i inventory.yml all -m ping
+
+          ■ 研修環境の構築（このWindows端末から実行可能）:
+            cd C:\path\to\airgap
+            ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
           ========================================
