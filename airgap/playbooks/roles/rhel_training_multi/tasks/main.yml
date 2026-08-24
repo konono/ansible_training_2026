@@ -85,7 +85,7 @@
 
 - name: コンテナを起動
   ansible.builtin.command:
-    cmd: /usr/local/bin/docker-compose up -d
+    cmd: /usr/local/bin/docker-compose -p user{{ user_id }} up -d
     chdir: "{{ user_training_dir }}/containers"
   environment:
     DOCKER_HOST: "unix:///run/podman/podman.sock"
