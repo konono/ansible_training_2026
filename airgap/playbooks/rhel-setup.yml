@@ -25,16 +25,12 @@
       ansible.builtin.debug:
         msg: |
           ========================================
-          研修環境のセットアップが完了しました！
+          Linux 演習サーバーの基盤セットアップが完了しました。
 
-          コントローラへの接続:
-            ssh -p {{ controller_ssh_port }} root@localhost
-            パスワード: password
+          各受講者は SSH でこのサーバーにログインし、
+          以下のコマンドで演習環境を構築してください:
 
-          研修コンテナ:
-            controller: 172.20.0.10 (SSH port {{ controller_ssh_port }})
-            node1:      172.20.0.11
-            node2:      172.20.0.12
-            node3:      172.20.0.13
-            lb:         172.20.0.14
+            ssh root@{{ ansible_facts["default_ipv4"]["address"] | default(hostvars[inventory_hostname]["ansible_host"]) }}
+            cd /opt/airgap
+            ./deploy-training.sh
           ========================================
