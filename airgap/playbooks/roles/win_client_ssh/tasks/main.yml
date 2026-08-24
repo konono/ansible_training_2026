@@ -43,52 +43,6 @@
   register: ssh_dir
   changed_when: "'CREATED' in ssh_dir.stdout | default('')"
 
-- name: SSH config に研修環境の接続設定を追加
-  ansible.windows.win_shell: |
-    $configPath = "$env:USERPROFILE\.ssh\config"
-    $entry = @"
-
-    # Ansible 研修環境
-    Host training
-        HostName {{ rhel_target_ip }}
-        Port {{ controller_ssh_port }}
-        User {{ controller_user }}
-        StrictHostKeyChecking no
-        UserKnownHostsFile /dev/null
-    "@
-
-    if (Test-Path $configPath) {
-      $content = Get-Content $configPath -Raw
-      if ($content -match "Host training") {
-        Write-Output "ALREADY_CONFIGURED"
-      } else {
-        Add-Content -Path $configPath -Value $entry
-        Write-Output "ADDED"
-      }
-    } else {
-      Set-Content -Path $configPath -Value $entry.TrimStart()
-      Write-Output "CREATED"
-    }
-  register: ssh_config
-  changed_when: "'ADDED' in ssh_config.stdout or 'CREATED' in ssh_config.stdout"
-
-- name: SSH 接続テスト
-  ansible.windows.win_shell: |
-    $result = sshpass -p "{{ controller_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p {{ controller_ssh_port }} {{ controller_user }}@{{ rhel_target_ip }} "ansible --version" 2>$null | Select-Object -First 1
-    if ($result -match "ansible") {
-      Write-Output "SSH_OK: $result"
-    } else {
-      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -p {{ controller_ssh_port }} {{ controller_user }}@{{ rhel_target_ip }} "ansible --version" 2>$null | Select-Object -First 1
-      if ($LASTEXITCODE -eq 0) {
-        Write-Output "SSH_OK_KEY"
-      } else {
-        Write-Output "SSH_MANUAL: ssh -p {{ controller_ssh_port }} {{ controller_user }}@{{ rhel_target_ip }} (password: {{ controller_password }})"
-      }
-    }
-  register: ssh_test
-  changed_when: false
-  failed_when: false
-
-- name: SSH 接続結果を表示
+- name: OpenSSH セットアップ完了
   ansible.builtin.debug:
-    msg: "{{ ssh_test.stdout_lines | default(['SSH test skipped']) }}"
+    msg: "OpenSSH Client: 利用可能。SSH config は演習環境デプロイ時に自動設定されます。"
