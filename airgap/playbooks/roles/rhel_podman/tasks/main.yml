@@ -1,4 +1,12 @@
 ---
+- name: inotify max_user_instances を拡張（systemd コンテナ多数起動用）
+  ansible.posix.sysctl:
+    name: fs.inotify.max_user_instances
+    value: '1024'
+    sysctl_set: true
+    state: present
+    reload: true
+
 - name: podman がインストール済みか確認
   ansible.builtin.command: podman --version
   register: podman_check
