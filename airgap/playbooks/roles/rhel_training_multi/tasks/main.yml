@@ -1,0 +1,160 @@
+---
+# --- 採番 ---
+- name: user_id を採番
+  ansible.builtin.shell: >
+    flock --timeout 30 {{ allocations_lock }}
+    python3 {{ allocate_script }}
+    --client-ip "{{ client_ip }}"
+    --hostname "{{ client_hostname | default('unknown') }}"
+    --action allocate
+  register: allocation_result
+  retries: 3
+  delay: 5
+  until: allocation_result.rc == 0
+  changed_when: false
+
+- name: 採番結果をパース
+  ansible.builtin.set_fact:
+    alloc: "{{ allocation_result.stdout | from_json }}"
+
+- name: 割当情報を表示
+  ansible.builtin.debug:
+    msg: "user_id={{ alloc.user_id }}, port={{ alloc.ssh_port }}, subnet={{ alloc.subnet }}"
+
+- name: 変数を設定
+  ansible.builtin.set_fact:
+    user_id: "{{ alloc.user_id }}"
+    user_training_dir: "/opt/training/user{{ alloc.user_id }}/ansible_training_2026"
+    user_ssh_port: "{{ alloc.ssh_port }}"
+
+# --- コンテナイメージのロード（初回のみ）---
+- name: コンテナイメージの存在確認
+  ansible.builtin.shell: podman images --format "table" | grep -q training-controller
+  register: images_check
+  changed_when: false
+  failed_when: false
+
+- name: コントローライメージをロード
+  ansible.builtin.command:
+    cmd: podman load -i {{ container_images_dir }}/training-controller.tar
+  when: images_check.rc != 0
+
+- name: Linuxノードイメージをロード
+  ansible.builtin.command:
+    cmd: podman load -i {{ container_images_dir }}/training-linux-node.tar
+  when: images_check.rc != 0
+
+# --- 研修資材の展開 ---
+- name: ユーザーディレクトリを作成
+  ansible.builtin.file:
+    path: "/opt/training/user{{ user_id }}"
+    state: directory
+    mode: '0755'
+
+- name: 研修資材を展開
+  ansible.builtin.unarchive:
+    src: "{{ training_archive }}"
+    dest: "/opt/training/user{{ user_id }}"
+    remote_src: true
+    creates: "{{ user_training_dir }}/README.md"
+
+- name: workspace ディレクトリを作成
+  ansible.builtin.file:
+    path: "{{ user_training_dir }}/{{ item }}/workspace"
+    state: directory
+    mode: '0755'
+  loop:
+    - basic-intro
+    - basic-roles
+    - advanced
+    - homework
+
+# --- docker-compose 配置 ---
+- name: docker-compose.yml を配置
+  ansible.builtin.template:
+    src: docker-compose-multiuser.yml.j2
+    dest: "{{ user_training_dir }}/containers/docker-compose.yml"
+    mode: '0644'
+
+# --- コンテナ起動 ---
+- name: コンテナの起動状態を確認
+  ansible.builtin.shell: |
+    podman ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^user{{ user_id }}_controller$" && echo "running" || echo "not_running"
+  register: container_check
+  changed_when: false
+
+- name: コンテナを起動
+  ansible.builtin.command:
+    cmd: /usr/local/bin/docker-compose up -d
+    chdir: "{{ user_training_dir }}/containers"
+  environment:
+    DOCKER_HOST: "unix:///run/podman/podman.sock"
+  when: "'not_running' in container_check.stdout"
+
+- name: SSH ポートの準備を待機
+  ansible.builtin.wait_for:
+    host: localhost
+    port: "{{ user_ssh_port }}"
+    timeout: 120
+    state: started
+
+# --- コンテナ内リポジトリ設定 ---
+- name: コンテナ内リポジトリ設定
+  ansible.builtin.shell: |
+    for c in user{{ user_id }}_controller user{{ user_id }}_node1 user{{ user_id }}_node2 user{{ user_id }}_node3 user{{ user_id }}_lb; do
+      podman exec $c bash -c '
+        sed -i "s/enabled *= *1/enabled=0/g" /etc/yum.repos.d/ubi.repo 2>/dev/null
+        cat > /etc/yum.repos.d/airgap-baseos.repo << REPO
+    [airgap-baseos]
+    name=Airgap BaseOS
+    baseurl=http://{{ repo_server_ip }}/repo/BaseOS
+    enabled=1
+    gpgcheck=0
+    REPO
+        cat > /etc/yum.repos.d/airgap-appstream.repo << REPO
+    [airgap-appstream]
+    name=Airgap AppStream
+    baseurl=http://{{ repo_server_ip }}/repo/AppStream
+    enabled=1
+    gpgcheck=0
+    REPO
+        dnf clean all >/dev/null 2>&1
+      '
+    done
+  when: "'not_running' in container_check.stdout"
+  changed_when: true
+
+# --- ステータス更新 ---
+- name: allocations を active に更新
+  ansible.builtin.shell: >
+    flock --timeout 30 {{ allocations_lock }}
+    python3 {{ allocate_script }}
+    --client-ip "{{ client_ip }}"
+    --action activate
+  changed_when: true
+
+# --- 結果表示 ---
+- name: コンテナ状態を確認
+  ansible.builtin.command: podman ps --format "table {% raw %}{{.Names}}\t{{.Status}}\t{{.Ports}}{% endraw %}" --filter "name=user{{ user_id }}_"
+  register: container_status
+  changed_when: false
+
+- name: 環境情報を表示
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      演習環境の構築が完了しました！
+
+      接続方法:
+        ssh -p {{ user_ssh_port }} root@{{ ansible_host }}
+        パスワード: password
+
+      コンテナ:
+      {{ container_status.stdout }}
+
+      SSH config に以下を追加すると便利です:
+        Host training
+            HostName {{ ansible_host }}
+            Port {{ user_ssh_port }}
+            User root
+      ========================================

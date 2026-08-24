@@ -1,0 +1,57 @@
+---
+- name: 自分の演習環境を削除
+  hosts: rhel
+  become: true
+  gather_facts: false
+
+  vars:
+    client_ip: "{{ caller_ip | default('unknown') }}"
+    allocate_script: /opt/airgap/scripts/allocate.py
+    allocations_lock: /opt/training/.lock
+
+  tasks:
+    - name: 自分の割当情報を取得
+      ansible.builtin.shell: >
+        python3 {{ allocate_script }} --client-ip "{{ client_ip }}" --action allocate
+      register: my_alloc_raw
+      changed_when: false
+      failed_when: my_alloc_raw.rc != 0
+
+    - name: 割当情報をパース
+      ansible.builtin.set_fact:
+        my_alloc: "{{ my_alloc_raw.stdout | from_json }}"
+
+    - name: 削除対象を表示
+      ansible.builtin.debug:
+        msg: "user_id={{ my_alloc.user_id }}, status={{ my_alloc.status }}"
+
+    - name: コンテナを停止・削除
+      ansible.builtin.shell: |
+        for c in user{{ my_alloc.user_id }}_controller user{{ my_alloc.user_id }}_node1 user{{ my_alloc.user_id }}_node2 user{{ my_alloc.user_id }}_node3 user{{ my_alloc.user_id }}_lb; do
+          podman stop $c 2>/dev/null
+          podman rm -f $c 2>/dev/null
+        done
+      changed_when: true
+
+    - name: ネットワークを削除
+      ansible.builtin.command:
+        cmd: podman network rm user{{ my_alloc.user_id }}_ansible_net
+      failed_when: false
+      changed_when: true
+
+    - name: 研修ディレクトリを削除
+      ansible.builtin.file:
+        path: "/opt/training/user{{ my_alloc.user_id }}"
+        state: absent
+
+    - name: allocations を released に更新
+      ansible.builtin.shell: >
+        flock --timeout 30 {{ allocations_lock }}
+        python3 {{ allocate_script }}
+        --client-ip "{{ client_ip }}"
+        --action release
+      changed_when: true
+
+    - name: 削除完了
+      ansible.builtin.debug:
+        msg: "user{{ my_alloc.user_id }} の環境を削除しました。user_id は再利用可能です。"

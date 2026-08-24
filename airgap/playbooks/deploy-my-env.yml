@@ -1,0 +1,28 @@
+---
+- name: 演習環境のセルフサービスデプロイ
+  hosts: rhel
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  vars:
+    client_ip: "{{ lookup('pipe', 'echo $SSH_CLIENT | cut -d\" \" -f1') | default(ansible_env.SSH_CLIENT.split()[0], true) | default('unknown') }}"
+    client_hostname: "{{ lookup('pipe', 'hostname') | default('unknown') }}"
+
+  pre_tasks:
+    - name: 採番スクリプトの存在を確認
+      ansible.builtin.stat:
+        path: "{{ allocate_script | default('/opt/airgap/scripts/allocate.py') }}"
+      register: script_check
+
+    - name: 採番スクリプトが見つからない場合エラー
+      ansible.builtin.fail:
+        msg: >
+          採番スクリプトが見つかりません。
+          airgap/ ディレクトリが /opt/airgap/ に配置されていることを確認してください。
+      when: not script_check.stat.exists
+
+  roles:
+    - rhel_training_multi

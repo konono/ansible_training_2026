@@ -1,0 +1,41 @@
+---
+- name: 研修環境の割当状況を表示
+  hosts: rhel
+  become: true
+  gather_facts: false
+
+  vars:
+    allocate_script: /opt/airgap/scripts/allocate.py
+
+  tasks:
+    - name: 割当状況を取得
+      ansible.builtin.command:
+        cmd: python3 {{ allocate_script }} --action status
+      register: status_raw
+      changed_when: false
+
+    - name: 割当一覧をパース
+      ansible.builtin.set_fact:
+        alloc_data: "{{ status_raw.stdout | from_json }}"
+
+    - name: 割当一覧を表示
+      ansible.builtin.debug:
+        msg: |
+          {% for a in alloc_data.allocations %}
+          user{{ a.user_id }} | {{ a.status | upper }} | {{ a.client_ip }} ({{ a.client_hostname }}) | port {{ a.ssh_port }} | {{ a.subnet }}
+          {% endfor %}
+          ---
+          合計: {{ alloc_data.allocations | length }} 件
+          (active: {{ alloc_data.allocations | selectattr('status', 'eq', 'active') | list | length }},
+           allocated: {{ alloc_data.allocations | selectattr('status', 'eq', 'allocated') | list | length }},
+           released: {{ alloc_data.allocations | selectattr('status', 'eq', 'released') | list | length }})
+
+    - name: 稼働中コンテナを確認
+      ansible.builtin.command:
+        cmd: podman ps --format "table {% raw %}{{.Names}}\t{{.Status}}{% endraw %}" --filter "name=user"
+      register: running_containers
+      changed_when: false
+
+    - name: 稼働中コンテナ一覧
+      ansible.builtin.debug:
+        msg: "{{ running_containers.stdout_lines }}"

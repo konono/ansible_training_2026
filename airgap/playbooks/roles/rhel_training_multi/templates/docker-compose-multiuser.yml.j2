@@ -1,0 +1,61 @@
+# マルチユーザー版 docker-compose.yml — user{{ user_id }}
+services:
+  controller:
+    image: {{ controller_image }}
+    container_name: user{{ user_id }}_controller
+    hostname: controller
+    privileged: true
+    ports:
+      - "{{ 2200 + user_id }}:22"
+    volumes:
+      - {{ user_training_dir }}/basic-intro/workspace:/root/basic-intro
+      - {{ user_training_dir }}/basic-roles/workspace:/root/basic-roles
+      - {{ user_training_dir }}/advanced/workspace:/root/advanced
+      - {{ user_training_dir }}/homework/workspace:/root/homework
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.{{ user_id }}.10
+
+  node1:
+    image: {{ node_image }}
+    container_name: user{{ user_id }}_node1
+    hostname: node1
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.{{ user_id }}.11
+
+  node2:
+    image: {{ node_image }}
+    container_name: user{{ user_id }}_node2
+    hostname: node2
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.{{ user_id }}.12
+
+  node3:
+    image: {{ node_image }}
+    container_name: user{{ user_id }}_node3
+    hostname: node3
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.{{ user_id }}.13
+
+  lb:
+    image: {{ node_image }}
+    container_name: user{{ user_id }}_lb
+    hostname: lb
+    privileged: true
+    networks:
+      ansible_net:
+        ipv4_address: 172.20.{{ user_id }}.14
+
+networks:
+  ansible_net:
+    name: user{{ user_id }}_ansible_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.{{ user_id }}.0/24
