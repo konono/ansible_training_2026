@@ -1,64 +1,75 @@
 # 構築ガイド — お客様環境での研修環境セットアップ
 
-airgap 環境に Ansible 研修環境を構築する手順書です。
+Windows クライアント + Linux サーバー構成で、マルチユーザー対応の Ansible 研修環境を構築する手順書です。
+1 台の Linux サーバーに複数人分の演習環境を構築し、各受講者が Windows 端末から SSH で接続して演習を行います。
+
+## 構成図
+
+```
+[管理者PC]                       [お客様 airgap 環境]
+  │                               ├── リポジトリサーバー (RHEL 10)
+  │  USB 等で airgap/ を持ち込み   │     └── DVD ISO → nginx HTTP 配信
+  └──────────────────────────────>├── Linux 演習サーバー (RHEL 10)
+                                  │     ├── podman + コンテナイメージ
+                                  │     ├── /opt/airgap/ (Playbook・スクリプト)
+                                  │     ├── user1 環境 (port 2201)
+                                  │     ├── user2 環境 (port 2202)
+                                  │     └── ...
+                                  └── Windows クライアント × N 台
+                                        └── SSH で Linux に接続して演習
+```
 
 ## 前提条件
 
 ### 持ち込み資材
 
-- `airgap/` ディレクトリ一式（USB 等で転送済み）
-- `offline-resources/` 内に以下が含まれていること（`./offline-validation.sh` で確認可能）:
-  - `iso/rhel-10.2-x86_64-dvd.iso` — リポジトリサーバー配置用 **かつ** コントローラセットアップ用
-  - `container-images/`, `binaries/`, `packages/`, `pip-packages/`, `ansible-collections/`, `training-materials/`
-
-> **注意**: `vm-images/` は開発テスト用です。お客様環境では VM を VMware, Hyper-V, 物理マシン等で個別に用意してください。
+`airgap/` ディレクトリ一式（USB 等で転送済み）。`./offline-validation.sh` でバンドルの完全性を確認できます。
 
 ### マシン要件
 
-| 役割 | OS | CPU | メモリ | ディスク |
-|---|---|---|---|---|
-| Ansible コントローラ | RHEL 10 | 2+ | 4GB+ | 20GB+（DVD ISO 一時使用） |
-| リポジトリサーバー | RHEL 10 | 2+ | 2GB+ | 20GB+（ISO 11GB 含む）|
-| RHEL 研修ターゲット | RHEL 10 | 4+ | 4GB+ | 20GB+ |
-| Windows 研修ターゲット（オプション）| Windows 11 Pro | 4+ | 8GB+ | 40GB+ |
+| 役割 | OS | CPU | メモリ | ディスク | 台数 |
+|---|---|---|---|---|---|
+| リポジトリサーバー | RHEL 10 | 2+ | 2GB+ | 20GB+ (ISO 11GB) | 1 |
+| Linux 演習サーバー | RHEL 10 | 4+ | 受講者数 × 1GB + 4GB | 40GB+ | 1 |
+| Windows クライアント | Windows 10/11 | - | - | - | 受講者数 |
 
-すべてのマシンが同一ネットワーク上にあり、SSH で接続可能であること。
+> **メモリ目安**: 1 環境（5 コンテナ）あたり約 100MB。10 人なら約 5GB で十分。
 
-## Step 0: コントローラノードのセットアップ
+すべてのマシンが同一ネットワーク上にあり、SSH で相互接続可能であること。
 
-Ansible を実行するコントローラノード自体も airgap 環境のため、オフラインでセットアップします。
-DVD ISO をコントローラにコピーし、`setup-controller.sh` を実行してください。
+---
+
+## 管理者の作業
+
+### Step 1: コントローラのセットアップ
+
+リポジトリサーバーまたは Linux 演習サーバーを Ansible コントローラとして使います。
 
 ```bash
-# DVD ISO をコントローラにコピー（USB ドライブ等から）
+# USB から airgap/ を Linux サーバーにコピー
+cp -r /mnt/usb/airgap/ /opt/airgap/
+
+# DVD ISO をコピー
 cp /mnt/usb/airgap/offline-resources/iso/rhel-10.2-x86_64-dvd.iso /opt/rhel10.iso
 
-# セットアップ実行（root 権限が必要）
-cd /path/to/airgap/
+# コントローラセットアップ（ansible-core + コレクション + sshpass をオフラインインストール）
+cd /opt/airgap
 ./setup-controller.sh /opt/rhel10.iso
 ```
 
-このスクリプトが自動で行うこと:
-1. DVD ISO をマウントしてローカルリポジトリを設定
-2. `gcc`, `make`, `python3-pip` 等の前提パッケージをインストール
-3. `ansible-core` を pip パッケージからオフラインインストール
-4. `sshpass` をソースからビルド
-5. Ansible コレクション（`ansible.posix`, `ansible.windows` 等）をインストール
+### Step 2: インベントリの編集
 
-## Step 1: インベントリの編集
-
-`inventory/hosts.yml`（統合インベントリ）をお客様環境に合わせて編集します。
+お客様環境の IP アドレスとパスワードに合わせて編集します。
 
 ```bash
-cd airgap/
-vi inventory/hosts.yml
+vi /opt/airgap/inventory/hosts.yml
 ```
 
 ```yaml
 all:
   vars:
     ansible_user: root
-    ansible_password: <RHEL の root パスワード>
+    ansible_password: <Linux の root パスワード>
   children:
     repo_server:
       hosts:
@@ -67,32 +78,23 @@ all:
     rhel:
       hosts:
         rhel-target:
-          ansible_host: <RHEL ターゲットの IP>
-    # Windows を使う場合はコメントを外す
-    # windows:
-    #   hosts:
-    #     win-target:
-    #       ansible_host: <Windows の IP>
-    #       ansible_user: <Windows ユーザー名>
-    #       ansible_password: "<Windows パスワード>"
+          ansible_host: <Linux 演習サーバーの IP>
 ```
 
-## Step 2: リソースの配置
-
-### リポジトリサーバー
-
-DVD ISO をリポジトリサーバーの `/opt/rhel10.iso` に配置します。
-Windows パッケージ（7-Zip MSI, Chocolatey nupkg）がある場合は `/opt/airgap-bundle/packages/` に配置します。
+### Step 3: リソースの配置
 
 ```bash
+cd /opt/airgap
+
+# DVD ISO → リポジトリサーバー
 scp offline-resources/iso/rhel-10.2-x86_64-dvd.iso root@<repo-server>:/opt/rhel10.iso
+
+# Windows パッケージ → リポジトリサーバー
+ssh root@<repo-server> 'mkdir -p /opt/airgap-bundle/packages'
 scp -r offline-resources/packages/ root@<repo-server>:/opt/airgap-bundle/packages/
-```
 
-### RHEL ターゲット
-
-```bash
-ssh root@<rhel-target> 'mkdir -p /opt/airgap-bundle/{container-images,binaries,training-materials}'
+# バンドル → Linux 演習サーバー
+ssh root@<rhel-target> 'mkdir -p /opt/airgap-bundle/{container-images,binaries,training-materials,pip-packages}'
 
 scp offline-resources/container-images/training-controller.tar \
     offline-resources/container-images/training-linux-node.tar \
@@ -103,170 +105,193 @@ scp offline-resources/binaries/docker-compose-linux-x86_64 \
 
 scp offline-resources/training-materials/ansible_training_2026.tar.gz \
     root@<rhel-target>:/opt/airgap-bundle/training-materials/
+
+scp -r offline-resources/pip-packages/ \
+    root@<rhel-target>:/opt/airgap-bundle/pip-packages/
 ```
 
-### Windows ターゲット（オプション）
-
-Windows へのファイル転送は Ansible 経由で行います。バイナリは `C:\airgap-bundle\` 直下に配置してください（`binaries/` サブディレクトリではない）。
+### Step 4: Playbook の実行
 
 ```bash
-for f in wsl.msi podman-setup.exe docker-compose-windows-x86_64.exe podman-machine-wsl.ociarchive; do
-  ansible -i inventory/windows-hosts.yml windows -m ansible.windows.win_copy \
-    -a "src=offline-resources/binaries/$f dest=C:/airgap-bundle/$f"
-done
-
-# コンテナイメージ
-ansible -i inventory/windows-hosts.yml windows -m ansible.windows.win_file \
-  -a "path=C:\\airgap-bundle\\container-images state=directory"
-for f in training-controller.tar training-linux-node.tar; do
-  ansible -i inventory/windows-hosts.yml windows -m ansible.windows.win_copy \
-    -a "src=offline-resources/container-images/$f dest=C:/airgap-bundle/container-images/$f"
-done
-
-# 研修資材
-ansible -i inventory/windows-hosts.yml windows -m ansible.windows.win_file \
-  -a "path=C:\\airgap-bundle\\training-materials state=directory"
-ansible -i inventory/windows-hosts.yml windows -m ansible.windows.win_copy \
-  -a "src=offline-resources/training-materials/ansible_training_2026.tar.gz dest=C:/airgap-bundle/training-materials/ansible_training_2026.tar.gz"
-```
-
-## Step 3: Windows SSH 事前設定（Windows ターゲットのみ）
-
-Windows ターゲット上で PowerShell のデフォルトシェル設定を行います。
-OpenSSH Server が起動していない場合は有効化してください。
-
-```powershell
-# 管理者 PowerShell で実行
-Start-Service sshd
-Set-Service -Name sshd -StartupType Automatic
-
-# SSH デフォルトシェルを PowerShell に変更
-New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell `
-  -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" `
-  -PropertyType String -Force
-```
-
-## Step 4: Playbook の実行
-
-### RHEL 環境
-
-```bash
-cd airgap/
+cd /opt/airgap
 
 # 1. リポジトリサーバーの構築
-ansible-playbook -i inventory/rhel-hosts.yml playbooks/repo-server-setup.yml
+ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml
 
-# 2. 研修環境の構築
-ansible-playbook -i inventory/rhel-hosts.yml playbooks/rhel-setup.yml
+# 2. Linux 演習サーバーの構築
+#    - podman + docker-compose のインストール
+#    - コンテナイメージのロード
+#    - deploy-training.sh 等のスクリプト配置
+#    - inotify 上限拡張（マルチユーザー対応）
+ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
 ```
 
-### Windows 環境
+### Step 5: 構築後の検証
 
 ```bash
-ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-setup.yml
-```
-
-### 一括実行
-
-```bash
-# site.yml は全 Playbook を順番に実行する
-ansible-playbook -i inventory/rhel-hosts.yml playbooks/site.yml
-```
-
-## Step 5: 構築後の検証
-
-### リポジトリサーバー
-
-```bash
-# BaseOS / AppStream が HTTP で配信されているか確認
+# リポジトリサーバー
 curl -s -o /dev/null -w '%{http_code}' http://<repo-server>/repo/BaseOS/repodata/repomd.xml
 # → 200
 
-# Windows パッケージ
-curl -s -o /dev/null -w '%{http_code}' http://<repo-server>/packages/7z2301-x64.msi
-# → 200
+# Linux 演習サーバーにスクリプトが配置されているか
+ssh root@<rhel-target> 'ls /opt/airgap/deploy-training.sh'
+
+# 割当状況の確認
+ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rhel-target
 ```
 
-### RHEL 研修環境
+### Step 6: Windows クライアントの事前設定
+
+各 Windows クライアント上で以下を実施してください（管理者 or 受講者が実施）。
+
+#### OpenSSH Client の確認
+
+PowerShell を管理者で開き:
+```powershell
+# OpenSSH Client が有効か確認
+Get-WindowsCapability -Online -Name OpenSSH.Client* | Select-Object State
+# "Installed" でなければ:
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
+
+#### VSCode + Remote-SSH のインストール（オプション）
+
+バンドル内のインストーラを使用:
+```powershell
+# VSCode
+& "C:\airgap-bundle\VSCodeSetup-x64.exe" /VERYSILENT /NORESTART /MERGETASKS=addtopath
+
+# Remote-SSH 拡張
+code --install-extension "C:\airgap-bundle\ms-vscode-remote.remote-ssh.vsix"
+```
+
+---
+
+## 受講者の作業
+
+### 演習環境の構築
+
+**PowerShell を開いて以下を実行:**
+
+```powershell
+# 1. Linux 演習サーバーに SSH 接続
+ssh root@<Linux 演習サーバーの IP>
+```
+パスワード: `<管理者に確認>`
 
 ```bash
-ansible-playbook -i inventory/rhel-hosts.yml playbooks/verify.yml
+# 2. 演習環境を構築（IP は自動取得されます）
+cd /opt/airgap
+./deploy-training.sh
 ```
 
-手動確認:
+完了すると以下のように表示されます:
+```
+接続元 IP: 192.168.1.31
+========================================
+演習環境の構築が完了しました！
+
+接続方法:
+  ssh -p 2201 root@192.168.1.10
+  パスワード: password
+========================================
+```
+
+### 演習環境への接続
+
+**新しい PowerShell ウィンドウ**を開いて:
+
+```powershell
+ssh -o StrictHostKeyChecking=no -p 2201 root@<Linux 演習サーバーの IP>
+```
+パスワード: `password`
+
+（ポート番号は `deploy-training.sh` の出力に表示された番号を使用）
+
+**VSCode で接続する場合:**
+1. `Ctrl+Shift+P` → `Remote-SSH: Connect to Host`
+2. `root@<IP> -p 2201` と入力
+3. パスワード: `password`
+
+### 演習の開始
+
+controller にログインしたら演習開始です:
 
 ```bash
-# ターゲット VM 上
-podman ps                              # 5 台のコンテナが Up
-ss -tlnp | grep 2220                   # SSH ポートが LISTENING
+# Ansible の確認
+ansible --version
 
-# controller 内
-ssh -p 2220 root@localhost             # パスワード: password
-ansible --version                      # ansible [core 2.21.x]
+# 作業ディレクトリへ移動
+cd ~/basic-intro
+
+# インベントリ作成（演習 1 の内容）
+# ※ ノードの IP アドレスは各自の環境に合わせて設定
+#    deploy-training.sh の出力で表示された subnet を確認
 ```
 
-### Windows 研修環境
+### 演習環境の削除・再構築
 
 ```bash
-# コンテナ確認
-ansible -i inventory/windows-hosts.yml windows -m raw -a 'podman --remote ps'
+# Linux 演習サーバーに SSH 接続して実行
+ssh root@<Linux 演習サーバーの IP>
+cd /opt/airgap
+./destroy-training.sh      # 環境削除
+./deploy-training.sh       # 再構築（同じ user_id が再利用されます）
 ```
 
-## Step 6: 研修受講者への案内
-
-| 項目 | 値 |
-|---|---|
-| 接続コマンド | `ssh -p 2220 root@<ターゲットIP>` |
-| ユーザー名 | `root` |
-| パスワード | `password` |
-| 演習資料の場所 | `/root/basic-intro`, `/root/basic-roles`, `/root/advanced` |
+---
 
 ## トラブルシューティング
 
-### コンテナが起動しない
+### `deploy-training.sh` でエラーが出る
 
+```
+エラー: 接続元 IP を特定できません。
+```
+→ SSH 経由でログインしてから実行してください。または `--ip` で手動指定:
 ```bash
-podman ps -a                             # 全コンテナの状態確認
-podman logs controller                   # ログ確認
+./deploy-training.sh --ip 192.168.1.31
 ```
 
-### SSH ポート 2220 に接続できない
+### SSH ポートに接続できない
 
 ```bash
-podman port controller                   # ポートマッピング確認
-podman exec controller systemctl status sshd
+# Linux 演習サーバー上で確認
+ss -tlnp | grep 22XX              # ポートが LISTENING か
+podman ps | grep userXX            # コンテナが Up か
+podman start userXX_controller     # 停止していたら起動
+```
+
+### コンテナが Exited (255) で起動しない
+
+`inotify` の上限に達している可能性:
+```bash
+cat /proc/sys/fs/inotify/max_user_instances
+# 128 以下なら不足。以下で拡張:
+echo 1024 > /proc/sys/fs/inotify/max_user_instances
+# rhel-setup.yml を再実行すれば永続化される
 ```
 
 ### 演習で nginx がインストールできない
 
-研修コンテナ内のリポジトリ設定を確認します。
-
 ```bash
-podman exec node1 dnf repolist
+# controller 内で確認
+podman exec userXX_node1 dnf repolist
 # airgap-baseos と airgap-appstream が表示されること
-# ubi-10-* が表示される場合は UBI リポジトリが無効化されていない
 ```
 
-### Windows の Playbook が途中で止まる
-
-- `podman machine start` は初回起動に数分かかる場合があります
-- コンテナイメージのロードも大容量のため時間がかかります
-- タイムアウトが発生した場合は再実行してください（冪等性あり）
-
-### 研修環境のリセット
+### 割当状況の確認（管理者）
 
 ```bash
-# RHEL: コンテナを再作成
-ssh root@<rhel-target>
-cd /opt/training/ansible_training_2026/containers
-DOCKER_HOST=unix:///run/podman/podman.sock docker-compose down
-DOCKER_HOST=unix:///run/podman/podman.sock docker-compose up -d
-
-# Windows: コンテナを再作成
-# Ansible から実行
-ansible -i inventory/windows-hosts.yml windows -m raw \
-  -a 'podman --remote stop -a; podman --remote rm -af'
-ansible-playbook -i inventory/windows-hosts.yml playbooks/windows-setup.yml
+cd /opt/airgap
+ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rhel-target
 ```
 
-受講者の作業ファイル（`workspace/` ディレクトリ）はホスト側にマウントされているため、コンテナ再作成後も保持されます。
+### 全環境の一括リセット（管理者）
+
+```bash
+ssh root@<rhel-target>
+podman stop -a; podman rm -af; podman network prune -f
+rm -f /opt/training/allocations.json
+rm -rf /opt/training/user*
+```
