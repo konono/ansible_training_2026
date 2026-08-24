@@ -34,7 +34,7 @@ Windows クライアント + Linux サーバー構成で、マルチユーザー
 | bastion（コントローラ） | RHEL 10 | 2 vCPU | 4 GB | 40 GB | 1 |
 | repository（リポジトリサーバー） | RHEL 10 | 2 vCPU | 2 GB | 30 GB | 1 |
 | training（Linux 演習サーバー） | RHEL 10 | 下表参照 | 下表参照 | 下表参照 | 1 |
-| Windows クライアント | Windows 10/11 | 2 vCPU | 4 GB | 60 GB | 受講者数 |
+| Windows クライアント | Windows 10/11 | — | — | — | 受講者数 |
 
 #### training サーバーのスペック（受講者数別）
 
