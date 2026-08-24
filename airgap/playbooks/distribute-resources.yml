@@ -1,0 +1,74 @@
+---
+- name: リポジトリサーバーへのリソース配置
+  hosts: repo_server
+  become: true
+  gather_facts: false
+
+  vars:
+    bundle_dir: "{{ playbook_dir }}/../offline-resources"
+
+  tasks:
+    - name: DVD ISO を配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/iso/rhel-10.2-x86_64-dvd.iso"
+        dest: /opt/rhel10.iso
+        mode: '0644'
+
+    - name: パッケージディレクトリを作成
+      ansible.builtin.file:
+        path: /opt/airgap-bundle/packages
+        state: directory
+        mode: '0755'
+
+    - name: Windows パッケージを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/packages/"
+        dest: /opt/airgap-bundle/packages/
+        mode: '0644'
+
+- name: Linux 演習サーバーへのリソース配置
+  hosts: rhel
+  become: true
+  gather_facts: false
+
+  vars:
+    bundle_dir: "{{ playbook_dir }}/../offline-resources"
+
+  tasks:
+    - name: バンドルディレクトリを作成
+      ansible.builtin.file:
+        path: "/opt/airgap-bundle/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - container-images
+        - binaries
+        - training-materials
+        - pip-packages
+
+    - name: コンテナイメージを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/container-images/{{ item }}"
+        dest: /opt/airgap-bundle/container-images/
+        mode: '0644'
+      loop:
+        - training-controller.tar
+        - training-linux-node.tar
+
+    - name: docker-compose バイナリを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/binaries/docker-compose-linux-x86_64"
+        dest: /opt/airgap-bundle/binaries/docker-compose-linux-x86_64
+        mode: '0755'
+
+    - name: 研修資材を配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/training-materials/"
+        dest: /opt/airgap-bundle/training-materials/
+        mode: '0644'
+
+    - name: pip パッケージを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/pip-packages/"
+        dest: /opt/airgap-bundle/pip-packages/
+        mode: '0644'
