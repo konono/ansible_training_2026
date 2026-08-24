@@ -1,9 +1,12 @@
 ---
 - name: airgap コード配置ディレクトリを作成
   ansible.builtin.file:
-    path: /opt/airgap
+    path: "{{ item }}"
     state: directory
     mode: '0755'
+  loop:
+    - /opt/airgap
+    - /opt/airgap/scripts
 
 - name: 採番スクリプトを配置
   ansible.builtin.copy:
