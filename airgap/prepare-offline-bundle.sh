@@ -168,8 +168,8 @@ download_windows_packages() {
         log_warn "7-Zip ダウンロード失敗"
 
     log_info "Chocolatey nupkg をダウンロード中..."
-    curl -fsSL \
-        "https://community.chocolatey.org/api/v2/package/chocolatey" \
+    curl -fsSL -L \
+        "https://packages.chocolatey.org/chocolatey.2.7.3.nupkg" \
         -o "$BUNDLE_DIR/packages/chocolatey.nupkg" || \
         log_warn "Chocolatey ダウンロード失敗"
 
