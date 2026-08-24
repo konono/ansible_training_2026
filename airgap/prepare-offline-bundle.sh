@@ -172,6 +172,18 @@ download_windows_packages() {
         -o "$BUNDLE_DIR/packages/chocolatey.nupkg" || \
         log_warn "Chocolatey ダウンロード失敗"
 
+    log_info "VSCode System Installer をダウンロード中..."
+    curl -fsSL -L \
+        "https://update.code.visualstudio.com/latest/win32-x64/stable" \
+        -o "$BUNDLE_DIR/packages/VSCodeSetup-x64.exe" || \
+        log_warn "VSCode ダウンロード失敗"
+
+    log_info "VSCode Remote-SSH 拡張 (vsix) をダウンロード中..."
+    curl -fsSL \
+        "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-vscode-remote/vsextensions/remote-ssh/latest/vspackage" \
+        -o "$BUNDLE_DIR/packages/ms-vscode-remote.remote-ssh.vsix" || \
+        log_warn "Remote-SSH vsix ダウンロード失敗"
+
     log_info "Phase 3.5 完了"
 }
 

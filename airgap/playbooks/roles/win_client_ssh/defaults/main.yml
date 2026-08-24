@@ -1,0 +1,5 @@
+---
+rhel_target_ip: "{{ hostvars[groups['rhel'][0]]['ansible_host'] if (groups['rhel'] | default([])) | length > 0 else '' }}"
+controller_ssh_port: 2220
+controller_user: root
+controller_password: password

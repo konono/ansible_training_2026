@@ -1,0 +1,12 @@
+---
+ansible_connection: ssh
+ansible_port: 22
+ansible_shell_type: powershell
+ansible_become: false
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o LogLevel=ERROR'
+ansible_ssh_pipelining: false
+ansible_ssh_retries: 5
+
+win_bundle_dir: 'C:/airgap-bundle'
+win_vscode_installer: "{{ win_bundle_dir }}/VSCodeSetup-x64.exe"
+win_vscode_ssh_vsix: "{{ win_bundle_dir }}/ms-vscode-remote.remote-ssh.vsix"

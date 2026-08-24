@@ -1,0 +1,48 @@
+---
+- name: Windows クライアント端末セットアップ（nested VM 不可の場合）
+  hosts: windows_clients
+  gather_facts: false
+  become: false
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/windows_clients.yml
+
+  pre_tasks:
+    - name: SSH 接続確認
+      ansible.windows.win_ping:
+
+    - name: OS 情報を取得
+      ansible.windows.win_shell: (Get-CimInstance Win32_OperatingSystem).Caption
+      register: os_check
+      changed_when: false
+
+    - name: OS が Windows であることを確認
+      ansible.builtin.assert:
+        that:
+          - "'Windows' in os_check.stdout"
+        fail_msg: "このPlaybookはWindows OSでのみ実行可能です"
+
+  roles:
+    - win_client_vscode
+    - win_client_ssh
+
+  post_tasks:
+    - name: セットアップ完了メッセージ
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Windows クライアントのセットアップが完了しました！
+
+          研修環境への接続方法:
+
+          [ターミナルから]
+            ssh training
+            または: ssh -p {{ controller_ssh_port }} {{ controller_user }}@{{ rhel_target_ip }}
+            パスワード: {{ controller_password }}
+
+          [VSCode から]
+            1. Ctrl+Shift+P → "Remote-SSH: Connect to Host"
+            2. "training" を選択
+            3. パスワード入力: {{ controller_password }}
+          ========================================

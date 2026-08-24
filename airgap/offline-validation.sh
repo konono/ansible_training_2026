@@ -89,6 +89,8 @@ else
     ((WARN++)) || true
 fi
 check_file "packages/chocolatey.nupkg" "Chocolatey nupkg"    "false"
+check_file "packages/VSCodeSetup-x64.exe" "VSCode インストーラ"    "false"
+check_file "packages/ms-vscode-remote.remote-ssh.vsix" "Remote-SSH 拡張"    "false"
 echo ""
 
 # --- DVD ISO ---

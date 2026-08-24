@@ -1,0 +1,3 @@
+---
+win_vscode_installer: "{{ win_bundle_dir }}/VSCodeSetup-x64.exe"
+win_vscode_ssh_vsix: "{{ win_bundle_dir }}/ms-vscode-remote.remote-ssh.vsix"

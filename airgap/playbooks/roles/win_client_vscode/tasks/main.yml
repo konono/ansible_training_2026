@@ -1,0 +1,80 @@
+---
+- name: VSCode がインストール済みか確認
+  ansible.windows.win_shell: |
+    if (Get-Command code -ErrorAction SilentlyContinue) {
+      code --version 2>$null | Select-Object -First 1
+      Write-Output "INSTALLED"
+    } else {
+      Write-Output "NOT_INSTALLED"
+    }
+  register: vscode_check
+  changed_when: false
+
+- name: VSCode インストーラの存在を確認
+  ansible.windows.win_stat:
+    path: "{{ win_vscode_installer }}"
+  register: vscode_installer
+  when: "'NOT_INSTALLED' in vscode_check.stdout"
+
+- name: VSCode をインストール
+  ansible.windows.win_package:
+    path: "{{ win_vscode_installer }}"
+    arguments: /VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath
+    state: present
+    expected_return_code: [0, 1638, 3010]
+  when:
+    - "'NOT_INSTALLED' in vscode_check.stdout"
+    - vscode_installer.stat.exists | default(false)
+  register: vscode_install
+
+- name: VSCode インストール後の PATH 更新を待機
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    if (Get-Command code -ErrorAction SilentlyContinue) {
+      Write-Output "PATH_OK"
+    } else {
+      Write-Output "PATH_NG"
+    }
+  register: path_refresh
+  changed_when: false
+  when: vscode_install is changed
+
+- name: Remote-SSH 拡張がインストール済みか確認
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    $extensions = code --list-extensions 2>$null
+    if ($extensions -match "ms-vscode-remote.remote-ssh") {
+      Write-Output "INSTALLED"
+    } else {
+      Write-Output "NOT_INSTALLED"
+    }
+  register: ssh_ext_check
+  changed_when: false
+
+- name: Remote-SSH vsix の存在を確認
+  ansible.windows.win_stat:
+    path: "{{ win_vscode_ssh_vsix }}"
+  register: ssh_vsix
+  when: "'NOT_INSTALLED' in ssh_ext_check.stdout"
+
+- name: Remote-SSH 拡張をインストール
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    code --install-extension "{{ win_vscode_ssh_vsix }}" --force 2>$null
+    Write-Output "EXTENSION_INSTALLED"
+  register: ext_install
+  when:
+    - "'NOT_INSTALLED' in ssh_ext_check.stdout"
+    - ssh_vsix.stat.exists | default(false)
+  changed_when: "'EXTENSION_INSTALLED' in ext_install.stdout | default('')"
+
+- name: VSCode バージョンを表示
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    code --version 2>$null | Select-Object -First 1
+  register: vscode_ver
+  changed_when: false
+
+- name: VSCode 情報を表示
+  ansible.builtin.debug:
+    msg: "VSCode {{ vscode_ver.stdout | default('unknown') | trim }}"
