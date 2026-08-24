@@ -47,6 +47,11 @@
     dest: /opt/airgap/ansible.cfg
     mode: '0644'
 
+- name: python3-pip をインストール
+  ansible.builtin.dnf:
+    name: python3-pip
+    state: present
+
 - name: ansible-playbook がインストール済みか確認
   ansible.builtin.command: ansible-playbook --version
   register: ansible_check
