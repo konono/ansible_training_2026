@@ -47,6 +47,32 @@
     dest: /opt/airgap/ansible.cfg
     mode: '0644'
 
+- name: ansible-playbook がインストール済みか確認
+  ansible.builtin.command: ansible-playbook --version
+  register: ansible_check
+  changed_when: false
+  failed_when: false
+
+- name: ansible-core をオフラインインストール
+  ansible.builtin.pip:
+    name: ansible-core
+    extra_args: "--no-index --find-links={{ bundle_staging_dir }}/pip-packages/"
+  when: ansible_check.rc != 0
+
+- name: Ansible コレクションを配置
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../offline-resources/ansible-collections/"
+    dest: /opt/airgap/offline-resources/ansible-collections/
+    mode: '0644'
+
+- name: Ansible コレクションをインストール
+  ansible.builtin.shell: |
+    for f in /opt/airgap/offline-resources/ansible-collections/*.tar.gz; do
+      ansible-galaxy collection install "$f" --force 2>/dev/null
+    done
+  when: ansible_check.rc != 0
+  changed_when: true
+
 - name: リポジトリサーバーが設定されていることを確認
   ansible.builtin.assert:
     that:
