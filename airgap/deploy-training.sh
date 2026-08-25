@@ -17,7 +17,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --test) TEST_COUNT="${2:-1}"; shift 2 ;;
         --name) CLIENT_HOSTNAME="$2"; shift 2 ;;
-        *)      CLIENT_HOSTNAME="$1"; shift ;;
+        *)      echo "不明なオプション: $1"; exit 1 ;;
     esac
 done
 

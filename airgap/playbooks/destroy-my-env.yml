@@ -9,11 +9,19 @@
     allocate_script: /opt/airgap/scripts/allocate.py
 
   tasks:
+    - name: SSH_CLIENT が設定されているか、テストモードであることを確認
+      ansible.builtin.assert:
+        that:
+          - (lookup('env', 'SSH_CLIENT') | length > 0)
+            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
+        fail_msg: >
+          SSH_CLIENT が未設定です。SSH 経由でログインしてから
+          destroy-training.sh を実行してください。
+
     - name: client_ip が SSH 接続元またはテスト用 IP であることを確認
       ansible.builtin.assert:
         that:
           - client_ip == (lookup('env', 'SSH_CLIENT') | split(' ') | first)
-            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
         fail_msg: >
           client_ip ({{ client_ip }}) が SSH 接続元と一致しません。
           destroy-training.sh 経由で実行してください。
@@ -24,6 +32,14 @@
         cmd: python3 {{ allocate_script }} --client-ip "{{ client_ip }}" --action lookup
       register: my_alloc_raw
       changed_when: false
+      failed_when: false
+
+    - name: 割当が見つからない場合はエラー
+      ansible.builtin.fail:
+        msg: >
+          IP {{ client_ip }} に対応する環境が見つかりません。
+          既に削除済みか、未デプロイの可能性があります。
+      when: my_alloc_raw.rc != 0
 
     - name: 割当情報をパース
       ansible.builtin.set_fact:

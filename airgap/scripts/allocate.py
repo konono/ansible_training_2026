@@ -30,8 +30,15 @@ LOCK_TIMEOUT = 30
 
 def load_allocations():
     if os.path.exists(ALLOCATIONS_FILE):
-        with open(ALLOCATIONS_FILE) as f:
-            return json.load(f)
+        try:
+            with open(ALLOCATIONS_FILE) as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            print(
+                f'{{"error": "allocations.json の読み込みに失敗しました: {e}"}}',
+                file=sys.stderr,
+            )
+            sys.exit(1)
     return {"allocations": []}
 
 
@@ -156,26 +163,37 @@ def status():
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
+def _acquire_lock(lf, lock_type):
+    try:
+        fcntl.flock(lf, lock_type | fcntl.LOCK_NB)
+    except OSError:
+        import time
+        deadline = time.monotonic() + LOCK_TIMEOUT
+        while True:
+            try:
+                fcntl.flock(lf, lock_type | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    print(
+                        '{"error": "ロック取得タイムアウト"}',
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                time.sleep(0.1)
+
+
 def with_lock(func, *args, **kwargs):
     os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
     with open(LOCK_FILE, "w") as lf:
-        try:
-            fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            import time
-            deadline = time.monotonic() + LOCK_TIMEOUT
-            while True:
-                try:
-                    fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except OSError:
-                    if time.monotonic() >= deadline:
-                        print(
-                            '{"error": "ロック取得タイムアウト"}',
-                            file=sys.stderr,
-                        )
-                        sys.exit(1)
-                    time.sleep(0.1)
+        _acquire_lock(lf, fcntl.LOCK_EX)
+        return func(*args, **kwargs)
+
+
+def with_shared_lock(func, *args, **kwargs):
+    os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
+    with open(LOCK_FILE, "w") as lf:
+        _acquire_lock(lf, fcntl.LOCK_SH)
         return func(*args, **kwargs)
 
 
@@ -200,7 +218,7 @@ def main():
         if not args.client_ip:
             print("--client-ip required for lookup", file=sys.stderr)
             sys.exit(1)
-        lookup(args.client_ip)
+        with_shared_lock(lookup, args.client_ip)
     elif args.action == "activate":
         if not args.client_ip:
             print("--client-ip required for activate", file=sys.stderr)
@@ -212,7 +230,7 @@ def main():
             sys.exit(1)
         with_lock(release, args.client_ip, args.user_id)
     elif args.action == "status":
-        status()
+        with_shared_lock(status)
 
 
 if __name__ == "__main__":

@@ -79,3 +79,17 @@
       loop_control:
         label: "user{{ item.item }}"
       when: "'MISSING:' in item.stdout"
+
+    - name: active ユーザーの SSH ポート疎通を確認
+      ansible.builtin.wait_for:
+        host: localhost
+        port: "{{ 2200 + (item | int) }}"
+        timeout: 10
+        state: started
+      loop: "{{ active_uids.stdout_lines }}"
+      loop_control:
+        label: "user{{ item }} (port {{ 2200 + (item | int) }})"
+
+    - name: 検証完了
+      ansible.builtin.debug:
+        msg: "全ての検証が完了しました（コンテナ起動 + SSH ポート疎通）"

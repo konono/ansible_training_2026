@@ -143,7 +143,7 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	@echo "=== Bundle → rhel-target ==="
 	@ansible -i $(INVENTORY) rhel-target -m file \
 		-a 'path=/opt/airgap-bundle state=directory' -e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | tail -1
-	@for d in container-images binaries training-materials; do \
+	@for d in container-images binaries training-materials pip-packages; do \
 		ansible -i $(INVENTORY) rhel-target -m file \
 			-a "path=/opt/airgap-bundle/$$d state=directory" \
 			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | tail -1; \
@@ -159,6 +159,10 @@ transfer-rhel: ## RHEL VM にリソースを転送
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/training-materials/ansible_training_2026.tar.gz dest=/opt/airgap-bundle/training-materials/" \
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
+	@echo "=== pip-packages → rhel-target ==="
+	@ansible -i $(INVENTORY) rhel-target -m copy \
+		-a "src=$(BUNDLE)/pip-packages/ dest=/opt/airgap-bundle/pip-packages/" \
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@echo "=== checksums.sha256 → rhel-target ==="
 	@ansible -i $(INVENTORY) rhel-target -m copy \
