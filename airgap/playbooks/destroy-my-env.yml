@@ -13,7 +13,7 @@
       ansible.builtin.assert:
         that:
           - client_ip == (lookup('env', 'SSH_CLIENT') | split(' ') | first)
-            or client_ip is match('^198\\.51\\.100\\.')
+            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
         fail_msg: >
           client_ip ({{ client_ip }}) が SSH 接続元と一致しません。
           destroy-training.sh 経由で実行してください。

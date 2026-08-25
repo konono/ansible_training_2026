@@ -37,6 +37,7 @@ for a in data['allocations']:
         exit 0
     fi
 
+    export ALLOW_TEST_IP=1
     COUNT=$(echo "$TEST_IPS" | wc -l)
     echo "テスト環境 $COUNT 件を削除します"
     echo ""

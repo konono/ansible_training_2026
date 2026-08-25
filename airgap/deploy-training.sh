@@ -29,6 +29,7 @@ if [[ "$TEST_COUNT" -gt 0 ]]; then
     echo "テストモード: $TEST_COUNT 人分の環境を作成します"
     echo ""
     cd "$SCRIPT_DIR"
+    export ALLOW_TEST_IP=1
     for i in $(seq 1 "$TEST_COUNT"); do
         IP="198.51.100.$i"
         NAME="test-user-$i"

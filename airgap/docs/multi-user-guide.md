@@ -151,7 +151,7 @@ rm -rf /opt/training/user*
 
 ### 採番の仕組み
 
-`/opt/airgap/scripts/allocate.py` が `flock` による排他制御で安全に user_id を採番します。
+`/opt/airgap/scripts/allocate.py` が内蔵の排他制御（`fcntl.flock`）で安全に user_id を採番します。
 
 - 同じ IP から再実行 → 同じ user_id を返す（冪等性）
 - `released` ステータスの ID → 次の採番で再利用（最小 ID 優先）
