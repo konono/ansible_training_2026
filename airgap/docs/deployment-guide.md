@@ -334,9 +334,13 @@ cd /opt/airgap
 
 ### `deploy-training.sh` で「接続元 IP を特定できません」
 
-SSH 経由でログインしてから実行してください。直接ログインした場合は `--ip` で手動指定:
+SSH 経由でログインしてから実行してください。コンソールから直接ログインした場合は SSH_CLIENT が設定されないため動作しません。
+
 ```bash
-./deploy-training.sh --ip 192.168.1.31 --name 山田太郎
+# 正しい使い方: SSH でログインしてから実行
+ssh root@<training の IP>
+cd /opt/airgap
+./deploy-training.sh
 ```
 
 ### SSH ポートに接続できない

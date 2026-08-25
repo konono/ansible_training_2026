@@ -22,7 +22,7 @@ cd "$SCRIPT_DIR"
 
 if [[ "$TEST_MODE" == true ]]; then
     # テスト環境（198.51.100.x）を全て検索して削除
-    ALLOCATE_SCRIPT=/opt/airgap/scripts/allocate.py
+    ALLOCATE_SCRIPT="$SCRIPT_DIR/scripts/allocate.py"
     TEST_IPS=$(python3 "$ALLOCATE_SCRIPT" --action status 2>/dev/null \
         | python3 -c "
 import json, sys

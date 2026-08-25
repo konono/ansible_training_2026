@@ -22,6 +22,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$TEST_COUNT" -gt 0 ]]; then
+    if [[ "$TEST_COUNT" -gt 99 ]]; then
+        echo "エラー: テスト環境は最大 99 人分まで作成できます。"
+        exit 1
+    fi
     echo "テストモード: $TEST_COUNT 人分の環境を作成します"
     echo ""
     cd "$SCRIPT_DIR"

@@ -155,8 +155,9 @@ rm -rf /opt/training/user*
 
 - 同じ IP から再実行 → 同じ user_id を返す（冪等性）
 - `released` ステータスの ID → 次の採番で再利用（最小 ID 優先）
-- `flock --timeout 30` + Ansible `retries: 3` で二重保護
+- スクリプト内蔵の `fcntl.flock` で排他制御（外部ラッパー不要）
 - Python 標準ライブラリのみ、追加パッケージ不要
+- user_id の上限は 99（ポート 2201〜2299）
 
 ### リソース共有
 

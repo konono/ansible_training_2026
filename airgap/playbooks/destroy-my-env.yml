@@ -9,6 +9,16 @@
     allocate_script: /opt/airgap/scripts/allocate.py
 
   tasks:
+    - name: client_ip が SSH 接続元またはテスト用 IP であることを確認
+      ansible.builtin.assert:
+        that:
+          - client_ip == (lookup('env', 'SSH_CLIENT') | split(' ') | first)
+            or client_ip is match('^198\\.51\\.100\\.')
+        fail_msg: >
+          client_ip ({{ client_ip }}) が SSH 接続元と一致しません。
+          destroy-training.sh 経由で実行してください。
+      when: lookup('env', 'SSH_CLIENT') | length > 0
+
     - name: 自分の割当情報を取得
       ansible.builtin.command:
         cmd: python3 {{ allocate_script }} --client-ip "{{ client_ip }}" --action lookup

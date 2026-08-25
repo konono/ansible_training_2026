@@ -15,7 +15,16 @@
           - client_ip | length > 0
         fail_msg: >
           client_ip が未指定です。deploy-training.sh 経由で実行してください。
-          手動実行: ansible-playbook ... -e client_ip=<IP>
+
+    - name: client_ip が SSH 接続元またはテスト用 IP であることを確認
+      ansible.builtin.assert:
+        that:
+          - client_ip == (lookup('env', 'SSH_CLIENT') | split(' ') | first)
+            or client_ip is match('^198\\.51\\.100\\.')
+        fail_msg: >
+          client_ip ({{ client_ip }}) が SSH 接続元と一致しません。
+          deploy-training.sh 経由で実行してください。
+      when: lookup('env', 'SSH_CLIENT') | length > 0
 
     - name: repo_server_ip が設定されていることを確認
       ansible.builtin.assert:
