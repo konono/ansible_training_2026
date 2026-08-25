@@ -201,11 +201,11 @@ curl -s -o /dev/null -w '%{http_code}' http://<repository>/repo/BaseOS/repodata/
 ssh root@<training> 'ls /opt/airgap/deploy-training.sh'
 
 # テスト環境を 1 つ作ってみる
-ssh root@<training> 'cd /opt/airgap && ./deploy-training.sh --test'
+ssh root@<training> 'cd /opt/airgap && ./deploy-training.sh --test 1'
 # → ssh -p 2201 root@<training> で接続確認
 
-# テスト環境を削除（デプロイ時に表示されたダミー IP を指定）
-ssh root@<training> 'cd /opt/airgap && ./destroy-training.sh --test 198.51.100.XX'
+# テスト環境を全て削除
+ssh root@<training> 'cd /opt/airgap && ./destroy-training.sh --test'
 ```
 
 ### Step 6: Windows クライアントの事前設定
