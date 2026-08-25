@@ -8,4 +8,3 @@ rhel_installer_iso: /opt/rhel10.iso
 
 controller_image: "training-controller:latest"
 node_image: "training-linux-node:latest"
-controller_ssh_port: 2220

@@ -5,7 +5,7 @@
   gather_facts: false
 
   vars:
-    client_ip: "{{ caller_ip | default('unknown') }}"
+    client_ip: "{{ client_ip | default('unknown') }}"
     allocate_script: /opt/airgap/scripts/allocate.py
     allocations_lock: /opt/training/.lock
 
@@ -24,13 +24,23 @@
       ansible.builtin.debug:
         msg: "user_id={{ my_alloc.user_id }}, status={{ my_alloc.status }}"
 
-    - name: コンテナとネットワークを削除
+    - name: コンテナとネットワークを削除（docker-compose）
       ansible.builtin.command:
         cmd: /usr/local/bin/docker-compose -p user{{ my_alloc.user_id }} down --remove-orphans
         chdir: "/opt/training/user{{ my_alloc.user_id }}/ansible_training_2026/containers"
       environment:
         DOCKER_HOST: "unix:///run/podman/podman.sock"
+      register: compose_down
       failed_when: false
+      changed_when: compose_down.rc == 0
+
+    - name: コンテナを個別停止・削除（docker-compose 失敗時のフォールバック）
+      ansible.builtin.shell: |
+        for c in user{{ my_alloc.user_id }}_controller user{{ my_alloc.user_id }}_node1 user{{ my_alloc.user_id }}_node2 user{{ my_alloc.user_id }}_node3 user{{ my_alloc.user_id }}_lb; do
+          podman stop "$c" 2>/dev/null; podman rm -f "$c" 2>/dev/null
+        done
+        podman network rm user{{ my_alloc.user_id }}_ansible_net 2>/dev/null || true
+      when: compose_down.rc != 0
       changed_when: true
 
     - name: 研修ディレクトリを削除

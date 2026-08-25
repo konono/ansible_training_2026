@@ -34,13 +34,12 @@
           ========================================
           Windows クライアントのセットアップが完了しました！
 
-          ■ 研修環境への接続:
-            [ターミナル]  ssh training
-            [VSCode]     Ctrl+Shift+P → "Remote-SSH: Connect to Host" → "training"
-            パスワード: {{ controller_password }}
-
           ■ 研修環境の構築:
-            ssh root@<training サーバー IP>
-            cd /opt/airgap
-            ./deploy-training.sh
+            1. training サーバーに SSH 接続:
+               ssh root@{{ rhel_target_ip | default('<training サーバー IP>') }}
+            2. 演習環境をデプロイ:
+               cd /opt/airgap && ./deploy-training.sh
+            3. 表示されたポート番号で接続:
+               ssh -p <ポート番号> root@{{ rhel_target_ip | default('<training サーバー IP>') }}
+               パスワード: password
           ========================================

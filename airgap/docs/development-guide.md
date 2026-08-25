@@ -14,13 +14,13 @@ airgap ツールキットの開発・テスト・改修に関するガイドで�
 │  ┌──────────────┐          ┌─────────────────────────────┐     │
 │  │ DVD ISO      │          │ podman + docker-compose     │     │
 │  │  ↓ mount     │  HTTP    │                             │     │
-│  │ nginx        │◄─────── │ ┌─── ansible_net ─────────┐ │     │
-│  │  /repo/      │          │ │ controller (.10) :2220  │ │     │
-│  │  /packages/  │          │ │ node1 (.11)             │ │     │
-│  └──────────────┘          │ │ node2 (.12)             │ │     │
-│                            │ │ node3 (.13)             │ │     │
-│                            │ │ lb (.14)                │ │     │
-│                            │ └─────────────────────────┘ │     │
+│  │ nginx        │◄─────── │ ┌─ user1_ansible_net ────┐  │     │
+│  │  /repo/      │          │ │ user1_controller :2201 │  │     │
+│  │  /packages/  │          │ │ user1_node1-3, lb      │  │     │
+│  └──────────────┘          │ ├─ user2_ansible_net ────┤  │     │
+│                            │ │ user2_controller :2202 │  │     │
+│                            │ │ user2_node1-3, lb      │  │     │
+│                            │ └────────────────────────┘  │     │
 │  Windows クライアント (.20) └─────────────────────────────┘     │
 │  ┌──────────────┐                                              │
 │  │ SSH + VSCode │─── ssh -p 220X root@rhel-target              │

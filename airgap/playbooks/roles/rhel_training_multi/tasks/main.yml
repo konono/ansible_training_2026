@@ -127,7 +127,6 @@
         dnf clean all >/dev/null 2>&1
       '
     done
-  when: "'not_running' in container_check.stdout"
   changed_when: true
 
 # --- ステータス更新 ---

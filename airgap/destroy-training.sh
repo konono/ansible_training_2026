@@ -6,7 +6,7 @@
 #   ./destroy-training.sh                   # IP 自動取得
 #   ./destroy-training.sh --ip 10.0.0.3     # IP 手動指定
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -28,10 +28,18 @@ if [[ -z "$CLIENT_IP" ]]; then
     exit 1
 fi
 
+REAL_IP="${SSH_CLIENT%% *}"
+if [[ -n "$REAL_IP" && "$CLIENT_IP" != "$REAL_IP" ]]; then
+    echo "警告: --ip ($CLIENT_IP) が SSH 接続元 ($REAL_IP) と異なります。"
+    echo "他の受講者の環境を削除する可能性があります。"
+    echo "管理者以外は --ip を使わず、自動検出を利用してください。"
+    echo ""
+fi
+
 echo "接続元 IP: $CLIENT_IP の環境を削除します。"
 echo ""
 
 cd "$SCRIPT_DIR"
 ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
-    -e "caller_ip=$CLIENT_IP" \
+    -e "client_ip=$CLIENT_IP" \
     --limit rhel-target

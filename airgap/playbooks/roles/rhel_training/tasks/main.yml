@@ -78,57 +78,6 @@
   when: ansible_check.rc != 0
   changed_when: true
 
-- name: リポジトリサーバーが設定されていることを確認
-  ansible.builtin.assert:
-    that:
-      - repo_server_ip | default('') | length > 0
-    fail_msg: >-
-      repo_server_ip が未設定です。
-      統合インベントリ (inventory/hosts.yml) に repo_server グループを含めるか、
-      -e "repo_server_ip=<IP>" で指定してください。
-
-- name: 研修用ディレクトリを作成
-  ansible.builtin.file:
-    path: "{{ training_base_dir }}"
-    state: directory
-    mode: '0755'
-
-- name: 研修資材アーカイブの存在を確認
-  ansible.builtin.stat:
-    path: "{{ training_archive }}"
-  register: archive_file
-
-- name: tar コマンドの存在を確認
-  ansible.builtin.command: which tar
-  register: tar_check
-  changed_when: false
-  failed_when: false
-
-- name: 研修資材を展開（tar使用）
-  ansible.builtin.unarchive:
-    src: "{{ training_archive }}"
-    dest: "{{ training_base_dir }}"
-    remote_src: true
-    creates: "{{ training_dir }}/README.md"
-  when:
-    - archive_file.stat.exists
-    - tar_check.rc == 0
-
-- name: 研修資材を展開（Pythonフォールバック）
-  ansible.builtin.command:
-    cmd: >
-      python3 -c "
-      import tarfile, os, warnings;
-      warnings.filterwarnings('ignore');
-      os.makedirs('{{ training_base_dir }}', exist_ok=True);
-      t = tarfile.open('{{ training_archive }}', 'r:gz');
-      t.extractall('{{ training_base_dir }}', filter='data') if hasattr(tarfile, 'data_filter') else t.extractall('{{ training_base_dir }}')
-      "
-    creates: "{{ training_dir }}/README.md"
-  when:
-    - archive_file.stat.exists
-    - tar_check.rc != 0
-
 - name: コントローライメージをロード
   ansible.builtin.command:
     cmd: podman load -i {{ container_images_dir }}/training-controller.tar

@@ -13,7 +13,7 @@ WIN_MAC  := 52:54:00:AA:BB:20
 
 .PHONY: help setup-network setup-vms setup-rhel-vms setup-win-vm \
         destroy-vms destroy-rhel-vms destroy-win-vm \
-        transfer-rhel transfer-win \
+        transfer-rhel \
         deploy-repo deploy-rhel deploy-all \
         verify-airgap verify-rhel \
         test clean full-test
@@ -164,27 +164,6 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	@ansible -i $(INVENTORY) rhel-target -m copy \
 		-a "src=$(BUNDLE)/checksums.sha256 dest=/opt/airgap-bundle/checksums.sha256" \
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
-	@echo "=== 転送完了 ==="
-
-transfer-win: ## Windows VM にリソースを転送
-	@echo "=== Bundle → Windows ==="
-	@for f in wsl.msi podman-setup.exe docker-compose-windows-x86_64.exe podman-machine-wsl.ociarchive; do \
-		echo "  $$f..."; \
-		ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_copy \
-			-a "src=$(BUNDLE)/binaries/$$f dest=C:/airgap-bundle/$$f" 2>&1 | grep -E 'changed|ok'; \
-	done
-	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_file \
-		-a 'path=C:\airgap-bundle\container-images state=directory' 2>&1 | tail -1
-	@for f in training-controller.tar training-linux-node.tar; do \
-		echo "  $$f..."; \
-		ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_copy \
-			-a "src=$(BUNDLE)/container-images/$$f dest=C:/airgap-bundle/container-images/$$f" 2>&1 | grep -E 'changed|ok'; \
-	done
-	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_file \
-		-a 'path=C:\airgap-bundle\training-materials state=directory' 2>&1 | tail -1
-	@ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_copy \
-		-a "src=$(BUNDLE)/training-materials/ansible_training_2026.tar.gz dest=C:/airgap-bundle/training-materials/ansible_training_2026.tar.gz" \
-		2>&1 | grep -E 'changed|ok'
 	@echo "=== 転送完了 ==="
 
 # --- デプロイ ---

@@ -14,11 +14,13 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime
 
 ALLOCATIONS_FILE = os.environ.get(
     "ALLOCATIONS_FILE", "/opt/training/allocations.json"
 )
+MAX_USER_ID = 99
 
 
 def load_allocations():
@@ -29,9 +31,16 @@ def load_allocations():
 
 
 def save_allocations(data):
-    os.makedirs(os.path.dirname(ALLOCATIONS_FILE), exist_ok=True)
-    with open(ALLOCATIONS_FILE, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    dirpath = os.path.dirname(ALLOCATIONS_FILE)
+    os.makedirs(dirpath, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dirpath, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, ALLOCATIONS_FILE)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def build_entry(user_id, client_ip, hostname, status="allocated"):
@@ -81,6 +90,14 @@ def allocate(client_ip, hostname):
         ]
         user_id = max(used_ids, default=0) + 1
 
+    if user_id > MAX_USER_ID:
+        print(
+            f'{{"error": "user_id 上限 ({MAX_USER_ID}) に達しました。'
+            f'不要な環境を destroy-training.sh で削除してください。"}}',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     entry = build_entry(user_id, client_ip, hostname)
     data["allocations"].append(entry)
     data["allocations"].sort(key=lambda e: e["user_id"])
@@ -102,7 +119,7 @@ def lookup(client_ip):
 def activate(client_ip):
     data = load_allocations()
     for entry in data["allocations"]:
-        if entry["client_ip"] == client_ip:
+        if entry["client_ip"] == client_ip and entry["status"] != "released":
             entry["status"] = "active"
             entry["activated_at"] = datetime.now().isoformat(timespec="seconds")
             save_allocations(data)
@@ -115,12 +132,11 @@ def activate(client_ip):
 def release(client_ip=None, user_id=None):
     data = load_allocations()
     for entry in data["allocations"]:
-        match = False
-        if client_ip and entry["client_ip"] == client_ip:
-            match = True
-        if user_id and entry["user_id"] == user_id:
-            match = True
-        if match and entry["status"] != "released":
+        if entry["status"] == "released":
+            continue
+        ip_ok = client_ip is None or entry["client_ip"] == client_ip
+        id_ok = user_id is None or entry["user_id"] == user_id
+        if ip_ok and id_ok and (client_ip is not None or user_id is not None):
             entry["status"] = "released"
             entry["released_at"] = datetime.now().isoformat(timespec="seconds")
             save_allocations(data)
