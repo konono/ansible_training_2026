@@ -38,6 +38,27 @@
         msg: "{{ alloc_status.stdout | from_json }}"
       when: alloc_status.rc == 0
 
+    - name: allocated のまま残っているユーザーを検出
+      ansible.builtin.shell: |
+        python3 /opt/airgap/scripts/allocate.py --action status | python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        stuck = [a for a in data['allocations'] if a['status'] == 'allocated']
+        for a in stuck:
+            print(f'user{a[\"user_id\"]} ({a[\"client_ip\"]}) - allocated since {a[\"allocated_at\"]}')
+        "
+      register: stuck_allocated
+      changed_when: false
+
+    - name: allocated 状態が残存している場合は警告
+      ansible.builtin.debug:
+        msg: |
+          以下のユーザーが allocated のまま残っています（デプロイ途中で失敗した可能性）:
+          {{ stuck_allocated.stdout }}
+          → 再デプロイ: deploy-training.sh --test N
+          → 削除: destroy-training.sh --test
+      when: stuck_allocated.stdout | length > 0
+
     - name: active ユーザーの ID を取得
       ansible.builtin.shell: |
         python3 /opt/airgap/scripts/allocate.py --action status | python3 -c "
