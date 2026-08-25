@@ -14,51 +14,68 @@
       register: podman_ver
       changed_when: false
 
-    - name: 研修コンテナが全て起動しているか確認
+    - name: podman バージョンを表示
+      ansible.builtin.debug:
+        msg: "{{ podman_ver.stdout }}"
+
+    - name: 起動中のコンテナを確認
+      ansible.builtin.command: podman ps --format "{% raw %}{{.Names}}{% endraw %}"
+      register: running_containers
+      changed_when: false
+
+    - name: コンテナ一覧を表示
+      ansible.builtin.debug:
+        msg: "{{ running_containers.stdout_lines }}"
+
+    - name: 割当状況を確認
+      ansible.builtin.command: python3 /opt/airgap/scripts/allocate.py --action status
+      register: alloc_status
+      changed_when: false
+      failed_when: false
+
+    - name: 割当状況を表示
+      ansible.builtin.debug:
+        msg: "{{ alloc_status.stdout | from_json }}"
+      when: alloc_status.rc == 0
+
+    - name: active ユーザーの ID を取得
+      ansible.builtin.shell: |
+        python3 /opt/airgap/scripts/allocate.py --action status | python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        for a in data['allocations']:
+            if a['status'] == 'active':
+                print(a['user_id'])
+        "
+      register: active_uids
+      changed_when: false
+
+    - name: active ユーザーのコンテナを検証
       ansible.builtin.shell: |
         missing=""
         for name in controller node1 node2 node3 lb; do
-          podman ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -q "^${name}$" || missing="${missing} ${name}"
+          podman ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^user{{ item }}_${name}$" || missing="$missing user{{ item }}_${name}"
         done
-        echo "${missing:-all_running}"
-      register: containers
+        if [ -n "$missing" ]; then
+          echo "MISSING:$missing"
+        else
+          echo "user{{ item }}: all 5 containers running"
+        fi
+      loop: "{{ active_uids.stdout_lines }}"
+      register: verify_results
       changed_when: false
 
-    - name: 起動中のコンテナを確認
-      ansible.builtin.assert:
-        that:
-          - "'all_running' in containers.stdout"
-        fail_msg: "停止中のコンテナがあります:{{ containers.stdout }}"
-        success_msg: "全てのコンテナ (controller, node1-3, lb) が起動しています"
-
-    - name: コントローラSSHポートへの接続を確認
-      ansible.builtin.wait_for:
-        host: localhost
-        port: 2220
-        timeout: 10
-        state: started
-
-    - name: コントローラ内からノードへのping確認
-      ansible.builtin.command: >
-        podman exec controller bash -c
-        "echo 'password' | sshpass -p 'password' ssh -o StrictHostKeyChecking=no root@172.20.0.{{ item }} cat /etc/hostname"
-      loop:
-        - 11
-        - 12
-        - 13
-        - 14
-      register: ping_results
-      changed_when: false
-      failed_when: ping_results.rc != 0
-
-    - name: ノード接続結果を表示
+    - name: 検証結果を表示
       ansible.builtin.debug:
-        msg: "172.20.0.{{ item.item }} -> SSH OK (rc={{ item.rc }})"
-      loop: "{{ ping_results.results }}"
+        msg: "{{ item.stdout }}"
+      loop: "{{ verify_results.results }}"
       loop_control:
-        label: "172.20.0.{{ item.item }}"
+        label: "user{{ item.item }}"
 
-    - name: 検証完了
-      ansible.builtin.debug:
-        msg: "全ての検証が完了しました。研修環境は正常に動作しています。"
-
+    - name: 停止中のコンテナがある場合は警告
+      ansible.builtin.fail:
+        msg: "停止中のコンテナがあります: {{ item.stdout }}"
+      loop: "{{ verify_results.results }}"
+      loop_control:
+        label: "user{{ item.item }}"
+      when: "'MISSING:' in item.stdout"

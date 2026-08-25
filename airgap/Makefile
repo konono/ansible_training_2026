@@ -14,8 +14,8 @@ WIN_MAC  := 52:54:00:AA:BB:20
 .PHONY: help setup-network setup-vms setup-rhel-vms setup-win-vm \
         destroy-vms destroy-rhel-vms destroy-win-vm \
         transfer-rhel transfer-win \
-        deploy-repo deploy-rhel deploy-win deploy-all \
-        verify-airgap verify-rhel verify-win \
+        deploy-repo deploy-rhel deploy-all \
+        verify-airgap verify-rhel \
         test clean full-test
 
 help: ## ヘルプを表示
@@ -197,10 +197,7 @@ deploy-rhel: deploy-repo ## RHEL 研修環境をセットアップ
 	ansible-playbook -i $(INVENTORY) playbooks/rhel-setup.yml \
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'"
 
-deploy-win: ## Windows 研修環境をセットアップ
-	ansible-playbook -i $(INVENTORY) playbooks/windows-setup.yml
-
-deploy-all: deploy-rhel deploy-win ## 全環境をセットアップ
+deploy-all: deploy-rhel ## 全環境をセットアップ
 
 # --- 検証 ---
 
@@ -216,21 +213,11 @@ verify-airgap: ## airgap 状態を検証
 			-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -q 'unreachable\|FAILED' \
 			&& echo "✓ AIRGAP (インターネット到達不可)" \
 			|| echo "✗ NOT AIRGAP (インターネットに到達可能 — 隔離されていません)"
-	@echo -n "  win11-airgap: "; \
-		ansible -i $(INVENTORY) win-airgap-vm -m ansible.windows.win_shell \
-			-a 'ping -n 1 -w 2000 8.8.8.8 | Select-String "loss"' 2>&1 | grep -q '100%' \
-			&& echo "✓ AIRGAP (インターネット到達不可)" \
-			|| echo "✗ NOT AIRGAP (インターネットに到達可能 — 隔離されていません)"
 
 verify-rhel: ## RHEL 研修環境の動作確認
 	@echo "=== RHEL 研修環境検証 ==="
-	@ansible -i $(INVENTORY) rhel-target -m shell \
-		-a 'podman exec controller ansible all -i "node1,node2,node3,lb," -m ping --user root --extra-vars "ansible_password=password ansible_ssh_common_args='\''-o StrictHostKeyChecking=no'\''"' \
-		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'SUCCESS|FAILED'
-
-verify-win: ## Windows 研修環境の動作確認
-	@echo "=== Windows 研修環境検証 ==="
-	ansible-playbook -i $(INVENTORY) playbooks/verify.yml --limit windows
+	ansible-playbook -i $(INVENTORY) playbooks/verify.yml --limit rhel \
+		-e "ansible_ssh_common_args='$(SSH_EXTRA)'"
 
 # --- 一括操作 ---
 
@@ -239,5 +226,5 @@ test: verify-airgap verify-rhel ## airgap + RHEL 環境の検証
 clean: destroy-vms ## 全 VM を削除してクリーン状態に
 	@echo "Clean complete"
 
-full-test: clean setup-vms transfer-rhel transfer-win deploy-all test verify-win ## フルテスト（削除→作成→デプロイ→検証）
+full-test: clean setup-vms transfer-rhel deploy-all test ## フルテスト（削除→作成→デプロイ→検証）
 	@echo "=== Full test complete ==="

@@ -31,121 +31,95 @@ Windows クライアント                    Linux サーバー (192.168.100.10
 ### Linux サーバー
 
 - RHEL 10（podman + docker-compose インストール済み）
-- リポジトリサーバー構築済み（`repo-server-setup.yml` + `rhel-setup.yml` の `rhel_podman` ロール実行済み）
+- リポジトリサーバー構築済み（`repo-server-setup.yml` + `rhel-setup.yml` 実行済み）
 - コンテナイメージロード済み
-- メモリ目安: 受講者 1 人あたり約 2GB（5 人なら 10GB + OS 分）
 - `/opt/airgap/` に airgap ディレクトリが配置済み
 - `/opt/training/` に十分なディスク空き
 
+> **実測値**: 1 環境（5 コンテナ）あたりメモリ約 80MB、ディスク約 5MB。
+> 20 人（100 コンテナ）で実測メモリ 2.2GB。
+
 ### Windows クライアント
 
-- `windows-client-setup.yml` でセットアップ済み（Ansible + SSH + VSCode）
+- OpenSSH Client が有効
 - Linux サーバーに SSH で接続可能
 
 ## セットアップ手順（管理者）
 
-### 1. Linux サーバーの準備
-
-リポジトリサーバーと Linux サーバーの基本セットアップは通常の手順で行います。
-
-```bash
-# コントローラから実行
-./setup-controller.sh /opt/rhel10.iso
-ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml
-ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
-```
-
-> **注意**: `rhel-setup.yml` はシングルユーザー版の環境を構築します。マルチユーザー版を使う場合、`rhel-setup.yml` の `rhel_podman` ロールで podman/docker-compose のインストールだけが必要です。シングルユーザー版のコンテナは起動しても問題ありませんが、受講者はマルチユーザー版を使います。
-
-### 2. Windows クライアントのセットアップ
-
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/windows-client-setup.yml
-```
-
-これにより各 Windows に Ansible、SSH、VSCode がインストールされます。
-
-### 3. 受講者への案内
-
-以下を受講者に伝えてください:
-
-```
-■ 演習環境の構築（初回のみ）
-  PowerShell を開き、以下を実行:
-    cd C:\airgap
-    ansible-playbook -i inventory/hosts.yml playbooks/deploy-my-env.yml
-
-  完了すると接続情報が表示されます:
-    ssh -p 22XX root@<Linux サーバー IP>
-    パスワード: password
-
-■ 演習環境への接続
-  表示されたポート番号で SSH 接続:
-    ssh -p 22XX root@<Linux サーバー IP>
-
-  VSCode で接続:
-    Ctrl+Shift+P → "Remote-SSH: Connect to Host"
-    → ホスト名と表示されたポート番号を入力
-
-■ 演習環境のリセット
-    ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml
-    ansible-playbook -i inventory/hosts.yml playbooks/deploy-my-env.yml
-```
+[構築ガイド](deployment-guide.md) の Step 1〜4 を実行してください。
 
 ## 受講者の操作
 
 ### 環境の構築
 
 ```powershell
-cd C:\airgap
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-my-env.yml
+# 1. training サーバーに SSH 接続
+ssh root@<training の IP>
+```
+パスワード: `<管理者に確認>`
+
+```bash
+# 2. 演習環境を構築（IP は SSH 接続元から自動取得されます）
+cd /opt/airgap
+./deploy-training.sh
 ```
 
 出力例:
 ```
+接続元 IP: 192.168.100.31
 ========================================
 演習環境の構築が完了しました！
 
 接続方法:
-  ssh -p 2203 root@192.168.100.10
+  ssh -p 2201 root@192.168.100.10
   パスワード: password
 
 コンテナ:
-  user3_controller  Up 10 seconds  0.0.0.0:2203->22/tcp
-  user3_node1       Up 10 seconds  22/tcp
-  user3_node2       Up 10 seconds  22/tcp
-  user3_node3       Up 10 seconds  22/tcp
-  user3_lb          Up 10 seconds  22/tcp
+  user1_controller  Up 10 seconds  0.0.0.0:2201->22/tcp
+  user1_node1       Up 10 seconds  22/tcp
+  user1_node2       Up 10 seconds  22/tcp
+  user1_node3       Up 10 seconds  22/tcp
+  user1_lb          Up 10 seconds  22/tcp
 ========================================
 ```
 
 ### 環境への接続
 
+**新しい PowerShell ウィンドウ**を開いて:
+
 ```powershell
-ssh -p 2203 root@192.168.100.10
+ssh -o StrictHostKeyChecking=no -p <表示されたポート番号> root@<training の IP>
 # パスワード: password
 ```
 
-controller にログインすると、通常の演習と同じ環境です:
-- `ansible --version` で Ansible が利用可能
-- `node1` (172.20.3.11), `node2` (172.20.3.12), `node3` (172.20.3.13), `lb` (172.20.3.14) が演習対象ノード
+**VSCode で接続する場合:**
+1. `Ctrl+Shift+P` → `Remote-SSH: Connect to Host`
+2. `root@<training の IP> -p <ポート番号>` と入力
+3. パスワード: `password`
 
-### 環境の削除
+### 環境の削除・再構築
 
-```powershell
-ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml -e caller_ip=<自分のWindowsのIP>
+```bash
+# training サーバーに SSH 接続して実行
+ssh root@<training の IP>
+cd /opt/airgap
+./destroy-training.sh      # 環境削除
+./deploy-training.sh       # 再構築（同じ user_id で再利用されます）
 ```
-
-### 環境の再構築
-
-削除後に再度 `deploy-my-env.yml` を実行すれば、同じ user_id で環境が再構築されます。
 
 ## 管理者の操作
 
 ### 全ユーザーの割当状況を確認
 
+bastion で:
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml
+cd /opt/airgap
+ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rhel-target
+```
+
+または training サーバーで直接:
+```bash
+python3 /opt/airgap/scripts/allocate.py --action status | python3 -m json.tool
 ```
 
 出力例:
@@ -164,30 +138,13 @@ user4 | RELEASED  | 192.168.100.34 (WIN-PC04) | port 2204 | 172.20.4.0/24
 | `ACTIVE` | 環境構築完了、利用中 |
 | `RELEASED` | 環境削除済み、ID 再利用可能 |
 
-### 特定ユーザーの環境を削除
+### 全環境の一括リセット
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
-  -e caller_ip=192.168.100.33
-```
-
-### 割当情報ファイルの直接確認
-
-```bash
-cat /opt/training/allocations.json | python3 -m json.tool
-```
-
-### 全環境の一括削除
-
-```bash
-# 全コンテナを停止・削除
-ssh root@<linux-server> 'podman stop -a; podman rm -af; podman network prune -f'
-
-# 割当情報をリセット
-ssh root@<linux-server> 'rm -f /opt/training/allocations.json'
-
-# 研修ディレクトリを削除
-ssh root@<linux-server> 'rm -rf /opt/training/user*'
+ssh root@<training>
+podman stop -a; podman rm -af; podman network prune -f
+rm -f /opt/training/allocations.json
+rm -rf /opt/training/user*
 ```
 
 ## 仕組みの詳細
@@ -196,8 +153,8 @@ ssh root@<linux-server> 'rm -rf /opt/training/user*'
 
 `/opt/airgap/scripts/allocate.py` が `flock` による排他制御で安全に user_id を採番します。
 
-- 同じ Windows IP から再実行 → 同じ user_id を返す（冪等性）
-- `released` ステータスの ID → 次の採番で再利用
+- 同じ IP から再実行 → 同じ user_id を返す（冪等性）
+- `released` ステータスの ID → 次の採番で再利用（最小 ID 優先）
 - `flock --timeout 30` + Ansible `retries: 3` で二重保護
 - Python 標準ライブラリのみ、追加パッケージ不要
 
@@ -216,6 +173,6 @@ ssh root@<linux-server> 'rm -rf /opt/training/user*'
 | 制限 | 詳細 |
 |---|---|
 | 最大ユーザー数 | 99 人（ポート 2201〜2299、サブネット 172.20.1〜99） |
-| メモリ | 受講者 1 人あたり約 2GB |
-| ディスク | 受講者 1 人あたり約 3GB（資材 + workspace） |
+| メモリ | 1 環境あたり約 80MB（OS ベースライン 2-3GB 別途） |
+| ディスク | 1 環境あたり約 5MB |
 | コンテナイメージロード | 初回のみ数分かかる |

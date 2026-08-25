@@ -4,6 +4,7 @@
 
 Usage:
   allocate.py --client-ip <IP> --action allocate [--hostname <name>]
+  allocate.py --client-ip <IP> --action lookup
   allocate.py --client-ip <IP> --action release
   allocate.py --action status
   allocate.py --user-id <ID> --action release
@@ -63,9 +64,10 @@ def allocate(client_ip, hostname):
             print(entry_json)
             return
 
-    released = [
-        e for e in data["allocations"] if e["status"] == "released"
-    ]
+    released = sorted(
+        [e for e in data["allocations"] if e["status"] == "released"],
+        key=lambda e: e["user_id"],
+    )
     if released:
         user_id = released[0]["user_id"]
         data["allocations"] = [
@@ -85,6 +87,16 @@ def allocate(client_ip, hostname):
     save_allocations(data)
 
     print(json.dumps(entry, ensure_ascii=False))
+
+
+def lookup(client_ip):
+    data = load_allocations()
+    for entry in data["allocations"]:
+        if entry["client_ip"] == client_ip and entry["status"] != "released":
+            print(json.dumps(entry, ensure_ascii=False))
+            return
+    print('{"error": "not found"}', file=sys.stderr)
+    sys.exit(1)
 
 
 def activate(client_ip):
@@ -131,7 +143,7 @@ def main():
     parser.add_argument(
         "--action",
         required=True,
-        choices=["allocate", "activate", "release", "status"],
+        choices=["allocate", "lookup", "activate", "release", "status"],
     )
     args = parser.parse_args()
 
@@ -140,6 +152,11 @@ def main():
             print("--client-ip required for allocate", file=sys.stderr)
             sys.exit(1)
         allocate(args.client_ip, args.hostname)
+    elif args.action == "lookup":
+        if not args.client_ip:
+            print("--client-ip required for lookup", file=sys.stderr)
+            sys.exit(1)
+        lookup(args.client_ip)
     elif args.action == "activate":
         if not args.client_ip:
             print("--client-ip required for activate", file=sys.stderr)

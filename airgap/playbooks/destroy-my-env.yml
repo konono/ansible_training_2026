@@ -11,11 +11,10 @@
 
   tasks:
     - name: 自分の割当情報を取得
-      ansible.builtin.shell: >
-        python3 {{ allocate_script }} --client-ip "{{ client_ip }}" --action allocate
+      ansible.builtin.command:
+        cmd: python3 {{ allocate_script }} --client-ip "{{ client_ip }}" --action lookup
       register: my_alloc_raw
       changed_when: false
-      failed_when: my_alloc_raw.rc != 0
 
     - name: 割当情報をパース
       ansible.builtin.set_fact:
@@ -25,17 +24,12 @@
       ansible.builtin.debug:
         msg: "user_id={{ my_alloc.user_id }}, status={{ my_alloc.status }}"
 
-    - name: コンテナを停止・削除
-      ansible.builtin.shell: |
-        for c in user{{ my_alloc.user_id }}_controller user{{ my_alloc.user_id }}_node1 user{{ my_alloc.user_id }}_node2 user{{ my_alloc.user_id }}_node3 user{{ my_alloc.user_id }}_lb; do
-          podman stop $c 2>/dev/null
-          podman rm -f $c 2>/dev/null
-        done
-      changed_when: true
-
-    - name: ネットワークを削除
+    - name: コンテナとネットワークを削除
       ansible.builtin.command:
-        cmd: podman network rm user{{ my_alloc.user_id }}_ansible_net
+        cmd: /usr/local/bin/docker-compose -p user{{ my_alloc.user_id }} down --remove-orphans
+        chdir: "/opt/training/user{{ my_alloc.user_id }}/ansible_training_2026/containers"
+      environment:
+        DOCKER_HOST: "unix:///run/podman/podman.sock"
       failed_when: false
       changed_when: true
 

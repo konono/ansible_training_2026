@@ -28,21 +28,27 @@
     user_ssh_port: "{{ alloc.ssh_port }}"
 
 # --- コンテナイメージのロード（初回のみ）---
-- name: コンテナイメージの存在確認
-  ansible.builtin.shell: podman images --format "table" | grep -q training-controller
-  register: images_check
+- name: コントローライメージの存在確認
+  ansible.builtin.shell: podman images --format "{% raw %}{{.Repository}}{% endraw %}" | grep -q training-controller
+  register: ctrl_image_check
   changed_when: false
   failed_when: false
 
 - name: コントローライメージをロード
   ansible.builtin.command:
     cmd: podman load -i {{ container_images_dir }}/training-controller.tar
-  when: images_check.rc != 0
+  when: ctrl_image_check.rc != 0
+
+- name: ノードイメージの存在確認
+  ansible.builtin.shell: podman images --format "{% raw %}{{.Repository}}{% endraw %}" | grep -q training-linux-node
+  register: node_image_check
+  changed_when: false
+  failed_when: false
 
 - name: Linuxノードイメージをロード
   ansible.builtin.command:
     cmd: podman load -i {{ container_images_dir }}/training-linux-node.tar
-  when: images_check.rc != 0
+  when: node_image_check.rc != 0
 
 # --- 研修資材の展開 ---
 - name: ユーザーディレクトリを作成
