@@ -74,7 +74,7 @@
 
     - name: 停止中のコンテナがある場合は警告
       ansible.builtin.fail:
-        msg: "停止中のコンテナがあります: {{ item.stdout }}"
+        msg: "未起動のコンテナがあります: {{ item.stdout }}"
       loop: "{{ verify_results.results }}"
       loop_control:
         label: "user{{ item.item }}"

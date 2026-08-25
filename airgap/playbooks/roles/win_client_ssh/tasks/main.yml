@@ -45,4 +45,4 @@
 
 - name: OpenSSH セットアップ完了
   ansible.builtin.debug:
-    msg: "OpenSSH Client: 利用可能。SSH config は演習環境デプロイ時に自動設定されます。"
+    msg: "OpenSSH Client: 利用可能。デプロイ後に表示される SSH 接続情報を参照してください。"
