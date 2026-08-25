@@ -17,6 +17,14 @@
           client_ip が未指定です。deploy-training.sh 経由で実行してください。
           手動実行: ansible-playbook ... -e client_ip=<IP>
 
+    - name: repo_server_ip が設定されていることを確認
+      ansible.builtin.assert:
+        that:
+          - repo_server_ip | default('') | length > 0
+        fail_msg: >
+          repo_server_ip が未設定です。インベントリに repo_server グループが
+          含まれていることを確認してください。
+
     - name: 採番スクリプトの存在を確認
       ansible.builtin.stat:
         path: "{{ allocate_script | default('/opt/airgap/scripts/allocate.py') }}"

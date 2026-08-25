@@ -1,8 +1,7 @@
 ---
 # --- 採番 ---
 - name: user_id を採番
-  ansible.builtin.shell: >
-    flock --timeout 30 {{ allocations_lock }}
+  ansible.builtin.command: >
     python3 {{ allocate_script }}
     --client-ip "{{ client_ip }}"
     --hostname "{{ client_hostname | default('unknown') }}"
@@ -107,7 +106,13 @@
 # --- コンテナ内リポジトリ設定 ---
 - name: コンテナ内リポジトリ設定
   ansible.builtin.shell: |
+    changed=false
     for c in user{{ user_id }}_controller user{{ user_id }}_node1 user{{ user_id }}_node2 user{{ user_id }}_node3 user{{ user_id }}_lb; do
+      existing=$(podman exec $c cat /etc/yum.repos.d/airgap-baseos.repo 2>/dev/null || true)
+      if echo "$existing" | grep -q '{{ repo_server_ip }}'; then
+        continue
+      fi
+      changed=true
       podman exec $c bash -c '
         sed -i "s/enabled *= *1/enabled=0/g" /etc/yum.repos.d/ubi.repo 2>/dev/null
         cat > /etc/yum.repos.d/airgap-baseos.repo << REPO
@@ -127,12 +132,13 @@
         dnf clean all >/dev/null 2>&1
       '
     done
-  changed_when: true
+    echo "CHANGED=$changed"
+  register: repo_config
+  changed_when: "'CHANGED=true' in repo_config.stdout"
 
 # --- ステータス更新 ---
 - name: allocations を active に更新
-  ansible.builtin.shell: >
-    flock --timeout 30 {{ allocations_lock }}
+  ansible.builtin.command: >
     python3 {{ allocate_script }}
     --client-ip "{{ client_ip }}"
     --action activate

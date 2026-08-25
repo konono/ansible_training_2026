@@ -10,30 +10,31 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-CLIENT_IP=""
+ARG_IP=""
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --ip) CLIENT_IP="$2"; shift 2 ;;
+        --ip) ARG_IP="$2"; shift 2 ;;
         *)    shift ;;
     esac
 done
 
-if [[ -z "$CLIENT_IP" ]]; then
-    CLIENT_IP="${SSH_CLIENT%% *}"
+# SSH 経由ならセッション情報を信頼（sshd がセットするため偽装不可）
+SSH_IP="${SSH_CLIENT%% *}"
+if [[ -n "$SSH_IP" ]]; then
+    CLIENT_IP="$SSH_IP"
+    if [[ -n "$ARG_IP" && "$ARG_IP" != "$SSH_IP" ]]; then
+        echo "注意: SSH 接続元 ($SSH_IP) を使用します（--ip は SSH セッション内では無効）"
+    fi
+else
+    CLIENT_IP="$ARG_IP"
 fi
 
 if [[ -z "$CLIENT_IP" ]]; then
     echo "エラー: 接続元 IP を特定できません。"
-    echo "使い方: ./destroy-training.sh --ip 10.0.0.3"
+    echo "使い方:"
+    echo "  SSH 経由でログイン後: ./destroy-training.sh"
+    echo "  コンソールから手動:   ./destroy-training.sh --ip 10.0.0.3"
     exit 1
-fi
-
-REAL_IP="${SSH_CLIENT%% *}"
-if [[ -n "$REAL_IP" && "$CLIENT_IP" != "$REAL_IP" ]]; then
-    echo "警告: --ip ($CLIENT_IP) が SSH 接続元 ($REAL_IP) と異なります。"
-    echo "他の受講者の環境を削除する可能性があります。"
-    echo "管理者以外は --ip を使わず、自動検出を利用してください。"
-    echo ""
 fi
 
 echo "接続元 IP: $CLIENT_IP の環境を削除します。"

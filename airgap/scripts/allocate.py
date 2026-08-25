@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import sys
@@ -20,7 +21,11 @@ from datetime import datetime
 ALLOCATIONS_FILE = os.environ.get(
     "ALLOCATIONS_FILE", "/opt/training/allocations.json"
 )
+LOCK_FILE = os.environ.get(
+    "LOCK_FILE", "/opt/training/.lock"
+)
 MAX_USER_ID = 99
+LOCK_TIMEOUT = 30
 
 
 def load_allocations():
@@ -151,6 +156,29 @@ def status():
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
+def with_lock(func, *args, **kwargs):
+    os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
+    with open(LOCK_FILE, "w") as lf:
+        try:
+            fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            import time
+            deadline = time.monotonic() + LOCK_TIMEOUT
+            while True:
+                try:
+                    fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        print(
+                            '{"error": "ロック取得タイムアウト"}',
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+                    time.sleep(0.1)
+        return func(*args, **kwargs)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--client-ip", default=None)
@@ -167,7 +195,7 @@ def main():
         if not args.client_ip:
             print("--client-ip required for allocate", file=sys.stderr)
             sys.exit(1)
-        allocate(args.client_ip, args.hostname)
+        with_lock(allocate, args.client_ip, args.hostname)
     elif args.action == "lookup":
         if not args.client_ip:
             print("--client-ip required for lookup", file=sys.stderr)
@@ -177,12 +205,12 @@ def main():
         if not args.client_ip:
             print("--client-ip required for activate", file=sys.stderr)
             sys.exit(1)
-        activate(args.client_ip)
+        with_lock(activate, args.client_ip)
     elif args.action == "release":
         if not args.client_ip and not args.user_id:
             print("--client-ip or --user-id required", file=sys.stderr)
             sys.exit(1)
-        release(args.client_ip, args.user_id)
+        with_lock(release, args.client_ip, args.user_id)
     elif args.action == "status":
         status()
 

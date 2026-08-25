@@ -41,5 +41,9 @@
                cd /opt/airgap && ./deploy-training.sh
             3. 表示されたポート番号で接続:
                ssh -p <ポート番号> root@{{ rhel_target_ip | default('<training サーバー IP>') }}
-               パスワード: password
+               パスワード: {{ controller_password }}
+
+          ■ VSCode で接続する場合:
+            Ctrl+Shift+P → "Remote-SSH: Connect to Host"
+            → root@<IP> -p <ポート番号> と入力
           ========================================

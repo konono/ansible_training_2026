@@ -7,7 +7,6 @@
   vars:
     client_ip: "{{ client_ip | default('unknown') }}"
     allocate_script: /opt/airgap/scripts/allocate.py
-    allocations_lock: /opt/training/.lock
 
   tasks:
     - name: 自分の割当情報を取得
@@ -49,8 +48,7 @@
         state: absent
 
     - name: allocations を released に更新
-      ansible.builtin.shell: >
-        flock --timeout 30 {{ allocations_lock }}
+      ansible.builtin.command: >
         python3 {{ allocate_script }}
         --client-ip "{{ client_ip }}"
         --action release

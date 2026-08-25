@@ -4,4 +4,3 @@ node_image: "training-linux-node:latest"
 container_images_dir: /opt/airgap-bundle/container-images
 training_archive: /opt/airgap-bundle/training-materials/ansible_training_2026.tar.gz
 allocate_script: /opt/airgap/scripts/allocate.py
-allocations_lock: /opt/training/.lock
