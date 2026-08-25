@@ -72,7 +72,7 @@
       loop_control:
         label: "user{{ item.item }}"
 
-    - name: 停止中のコンテナがある場合は警告
+    - name: 未起動のコンテナがある場合は警告
       ansible.builtin.fail:
         msg: "未起動のコンテナがあります: {{ item.stdout }}"
       loop: "{{ verify_results.results }}"
