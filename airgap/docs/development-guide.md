@@ -153,12 +153,13 @@ all:
           ansible_host: 192.168.100.10
           ansible_user: root
           ansible_password: password
-    windows:
-      hosts:
-        win-airgap-vm:
-          ansible_host: 192.168.100.20
-          ansible_user: cocoon
-          ansible_password: "C@c#on160"
+    # Windows クライアントがある場合
+    # windows_clients:
+    #   hosts:
+    #     win-client-01:
+    #       ansible_host: 192.168.100.20
+    #       ansible_user: cocoon
+    #       ansible_password: "C@c#on160"
 ```
 
 ## テスト時の注意事項
@@ -177,33 +178,9 @@ VM は必ず libvirt の `airgap-training` ネットワーク（`<forward>` な�
 make verify-airgap
 ```
 
-### Windows 接続: SSH（WinRM は使わない）
+### Windows クライアントの接続
 
-Windows への Ansible 接続は SSH を使用します。WinRM は以下の理由で不採用:
-
-1. **ネスト仮想化環境で極端に遅い** — `podman --version` すら 600 秒タイムアウトすることがある
-2. **CLIXML 問題** — PowerShell が stderr に CLIXML を出力し、SSH 接続プラグインが接続エラーと誤認する
-
-SSH 接続時の注意:
-
-| 設定 | 値 | 理由 |
-|---|---|---|
-| `ansible_shell_type` | `powershell` | Windows モジュールは PowerShell 必須 |
-| `ansible_ssh_pipelining` | `false` | 安定性向上 |
-| `ansible_ssh_retries` | `5` | 接続断からの回復 |
-| `-o LogLevel=ERROR` | SSH オプション | stderr への警告出力を抑制 |
-| `-o ServerAliveInterval=15` | SSH オプション | keepalive で接続維持 |
-
-PowerShell コマンドで CLIXML が問題になる場合:
-- `win_shell` の `podman` コマンドに `2>$null` を付ける
-- ポート確認等は `raw` モジュール + `netstat` で代替する
-- `win_path` は `win_shell` でレジストリ直接操作に置き換える
-
-### Windows コンテナ起動: `podman --remote`（docker-compose は使わない）
-
-Windows では `docker-compose` ではなく `podman --remote run` でコンテナを起動します。
-
-理由: `docker-compose` は Windows Named Pipe (`//./pipe/docker_engine`) 経由で通信しますが、このパイプは `podman machine start` を実行した SSH セッション終了時に消失します。`podman --remote` は SSH 経由で WSL 内の podman に直接接続するため、セッション非依存で動作します。
+Windows クライアントへの Ansible 接続は SSH を使用します（`group_vars/windows_clients.yml` で設定）。Windows 上ではコンテナを起動せず、OpenSSH と VSCode のセットアップのみを行います。受講者は SSH で Linux training サーバーに接続して演習を実施します。
 
 ### KVM ゲストイメージのディスク拡張
 
