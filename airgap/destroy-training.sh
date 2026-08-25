@@ -3,37 +3,35 @@
 # 受講者が Linux サーバーに SSH ログイン後に実行する
 #
 # 使い方:
-#   ./destroy-training.sh                   # IP 自動取得
-#   ./destroy-training.sh --ip 10.0.0.3     # IP 手動指定
+#   ./destroy-training.sh                          # SSH 接続元 IP で自動識別
+#   ./destroy-training.sh --test 198.51.100.42     # テスト用（ダミー IP 指定）
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-ARG_IP=""
+TEST_IP=""
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --ip) ARG_IP="$2"; shift 2 ;;
-        *)    shift ;;
+        --test) TEST_IP="$2"; shift 2 ;;
+        *)      shift ;;
     esac
 done
 
-# SSH 経由ならセッション情報を信頼（sshd がセットするため偽装不可）
-SSH_IP="${SSH_CLIENT%% *}"
-if [[ -n "$SSH_IP" ]]; then
-    CLIENT_IP="$SSH_IP"
-    if [[ -n "$ARG_IP" && "$ARG_IP" != "$SSH_IP" ]]; then
-        echo "注意: SSH 接続元 ($SSH_IP) を使用します（--ip は SSH セッション内では無効）"
-    fi
+if [[ -n "$TEST_IP" ]]; then
+    CLIENT_IP="$TEST_IP"
+    echo "テストモード: IP $CLIENT_IP の環境を削除します。"
 else
-    CLIENT_IP="$ARG_IP"
+    # SSH 接続元 IP を使用（sshd がセットするため偽装不可）
+    CLIENT_IP="${SSH_CLIENT%% *}"
 fi
 
 if [[ -z "$CLIENT_IP" ]]; then
     echo "エラー: 接続元 IP を特定できません。"
+    echo ""
     echo "使い方:"
     echo "  SSH 経由でログイン後: ./destroy-training.sh"
-    echo "  コンソールから手動:   ./destroy-training.sh --ip 10.0.0.3"
+    echo "  テスト用:             ./destroy-training.sh --test 198.51.100.42"
     exit 1
 fi
 

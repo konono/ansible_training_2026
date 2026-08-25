@@ -3,39 +3,40 @@
 # 受講者が Linux サーバーに SSH ログイン後に実行する
 #
 # 使い方:
-#   ./deploy-training.sh                    # IP 自動取得
-#   ./deploy-training.sh --ip 10.0.0.3      # IP 手動指定（テスト・代理実行用）
+#   ./deploy-training.sh                    # SSH 接続元 IP で自動識別
 #   ./deploy-training.sh --name 山田太郎    # ホスト名を指定
+#   ./deploy-training.sh --test             # テスト用（ダミー IP で環境作成）
+#   ./deploy-training.sh --test testuser1   # テスト用（名前付き）
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 引数解析
-ARG_IP=""
+TEST_MODE=false
 CLIENT_HOSTNAME=""
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --ip)   ARG_IP="$2"; shift 2 ;;
+        --test) TEST_MODE=true; shift
+                if [[ $# -gt 0 && "$1" != --* ]]; then
+                    CLIENT_HOSTNAME="$1"; shift
+                fi ;;
         --name) CLIENT_HOSTNAME="$2"; shift 2 ;;
         *)      CLIENT_HOSTNAME="$1"; shift ;;
     esac
 done
 
-# SSH 経由ならセッション情報を信頼（sshd がセットするため偽装不可）
-SSH_IP="${SSH_CLIENT%% *}"
-if [[ -n "$SSH_IP" ]]; then
-    CLIENT_IP="$SSH_IP"
-    if [[ -n "$ARG_IP" && "$ARG_IP" != "$SSH_IP" ]]; then
-        echo "注意: SSH 接続元 ($SSH_IP) を使用します（--ip は SSH セッション内では無効）"
-    fi
+if [[ "$TEST_MODE" == true ]]; then
+    # テスト用: RFC 5737 TEST-NET-2 (198.51.100.0/24) からランダム生成
+    CLIENT_IP="198.51.100.$((RANDOM % 254 + 1))"
+    CLIENT_HOSTNAME="${CLIENT_HOSTNAME:-test-$(date +%s)}"
+    echo "テストモード: ダミー IP $CLIENT_IP を使用"
 else
-    # コンソール直接ログイン（管理者用途）→ --ip を許可
-    CLIENT_IP="$ARG_IP"
-fi
-
-if [[ -z "$CLIENT_HOSTNAME" ]]; then
-    CLIENT_HOSTNAME="$(hostname)"
+    # SSH 接続元 IP を使用（sshd がセットするため偽装不可）
+    CLIENT_IP="${SSH_CLIENT%% *}"
+    if [[ -z "$CLIENT_HOSTNAME" ]]; then
+        CLIENT_HOSTNAME="$(hostname)"
+    fi
 fi
 
 if [[ -z "$CLIENT_IP" ]]; then
@@ -43,7 +44,7 @@ if [[ -z "$CLIENT_IP" ]]; then
     echo ""
     echo "使い方:"
     echo "  SSH 経由でログイン後: ./deploy-training.sh"
-    echo "  コンソールから手動:   ./deploy-training.sh --ip 10.0.0.3"
+    echo "  テスト用:             ./deploy-training.sh --test"
     exit 1
 fi
 
