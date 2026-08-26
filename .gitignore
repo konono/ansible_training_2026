@@ -11,6 +11,7 @@ Thumbs.db
 
 # Ansible
 *.retry
+.ansible/
 
 # Development tools
 .tracecraft/
