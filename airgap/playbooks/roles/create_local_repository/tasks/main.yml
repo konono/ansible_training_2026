@@ -17,6 +17,12 @@
               alias {{ iso_mount_point }}/;
               autoindex {{ nginx_autoindex }};
           }
+          {% if ubi10_repo_enabled | default(true) %}
+          location /ubi10/ {
+              alias {{ ubi10_repo_dir }}/;
+              autoindex on;
+          }
+          {% endif %}
           location /packages/ {
               alias {{ packages_dir }}/;
               autoindex on;

@@ -15,6 +15,10 @@ nginx_server_name: _
 nginx_repo_location: /repo/
 nginx_autoindex: "on"
 
+# UBI 10 mirror repository (for containers in airgap)
+ubi10_repo_dir: /opt/ubi10-repos
+ubi10_repo_enabled: true
+
 # Windows packages directory
 packages_dir: /opt/packages
 

@@ -1,5 +1,5 @@
 ---
-- name: RHEL 10 Airgap 研修環境セットアップ
+- name: "RHEL {{ rhel_major }} Airgap 研修環境セットアップ"
   hosts: rhel
   become: true
   gather_facts: true

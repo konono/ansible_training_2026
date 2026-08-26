@@ -2,6 +2,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/rhel-version.conf"
 BUNDLE_DIR="$SCRIPT_DIR/offline-resources"
 
 RED='\033[0;31m'
@@ -31,11 +32,14 @@ log_info "Step 1: DVD ISO からローカルリポジトリを設定"
 
 ISO_PATH="${1:-}"
 if [[ -z "$ISO_PATH" ]]; then
-    ISO_PATH=$(ls "$BUNDLE_DIR"/iso/rhel-*.iso 2>/dev/null | head -1)
+    ISO_PATH=$(ls "$BUNDLE_DIR"/iso/rhel-${RHEL_VERSION}-*.iso 2>/dev/null | head -1)
+    if [[ -z "$ISO_PATH" ]]; then
+        ISO_PATH=$(ls "$BUNDLE_DIR"/iso/rhel-*.iso 2>/dev/null | head -1)
+    fi
 fi
 if [[ -z "$ISO_PATH" ]] || [[ ! -f "$ISO_PATH" ]]; then
     log_error "DVD ISO が見つかりません。引数で指定するか offline-resources/iso/ に配置してください"
-    log_error "使用方法: $0 [/path/to/rhel-10.x-dvd.iso]"
+    log_error "使用方法: $0 [/path/to/rhel-${RHEL_MAJOR}.x-dvd.iso]"
     exit 1
 fi
 log_info "ISO: $ISO_PATH"
@@ -82,9 +86,19 @@ echo ""
 
 # --- Step 2: 前提パッケージのインストール ---
 log_info "Step 2: 前提パッケージのインストール"
+
+# RHEL 9 では python3.12 を使用（pip パッケージの互換性のため）
+PYTHON_CMD="python3"
+if [[ "$(python3 --version 2>&1)" == *"3.9"* ]] || [[ "$(python3 --version 2>&1)" == *"3.11"* ]]; then
+    log_info "Python 3.12 をインストールします（pip パッケージ互換性のため）"
+    dnf install -y python3.12 python3.12-pip 2>&1 | tail -3
+    if command -v python3.12 >/dev/null 2>&1; then
+        PYTHON_CMD="python3.12"
+        log_info "Python 3.12 を使用します"
+    fi
+fi
+
 PKGS_TO_INSTALL=()
-command -v python3   >/dev/null 2>&1 || PKGS_TO_INSTALL+=("python3")
-python3 -m pip --version >/dev/null 2>&1 || PKGS_TO_INSTALL+=("python3-pip")
 command -v gcc       >/dev/null 2>&1 || PKGS_TO_INSTALL+=("gcc")
 command -v make      >/dev/null 2>&1 || PKGS_TO_INSTALL+=("make")
 command -v ssh       >/dev/null 2>&1 || PKGS_TO_INSTALL+=("openssh-clients")
@@ -93,11 +107,11 @@ if [[ ${#PKGS_TO_INSTALL[@]} -gt 0 ]]; then
     log_info "インストール: ${PKGS_TO_INSTALL[*]}"
     dnf install -y "${PKGS_TO_INSTALL[@]}" 2>&1 | tail -3
 else
-    log_info "前提パッケージは全てインストール済みです"
+    log_info "追加パッケージは全てインストール済みです"
 fi
 
-python3 --version
-python3 -m pip --version
+$PYTHON_CMD --version
+$PYTHON_CMD -m pip --version
 echo ""
 
 # --- Step 3: ansible-core のインストール ---
@@ -108,7 +122,7 @@ if command -v ansible >/dev/null 2>&1; then
 else
     if [[ -d "$BUNDLE_DIR/pip-packages" ]]; then
         log_info "バンドルの pip パッケージからインストールします"
-        python3 -m pip install --no-index --find-links="$BUNDLE_DIR/pip-packages/" \
+        $PYTHON_CMD -m pip install --no-index --find-links="$BUNDLE_DIR/pip-packages/" \
             ansible-core 2>&1 | tail -3
     else
         log_error "pip-packages/ が見つかりません。バンドルを確認してください"
@@ -176,7 +190,7 @@ echo ""
 log_info "=== セットアップ完了 ==="
 echo ""
 echo "  ansible:     $(ansible --version 2>/dev/null | head -1)"
-echo "  ansible-core: $(python3 -c 'import ansible; print(ansible.__version__)' 2>/dev/null)"
+echo "  ansible-core: $($PYTHON_CMD -c 'import ansible; print(ansible.__version__)' 2>/dev/null)"
 echo ""
 echo "コレクション:"
 ansible-galaxy collection list 2>/dev/null | grep -E 'ansible\.(posix|windows)|community\.(general|windows)' | head -10

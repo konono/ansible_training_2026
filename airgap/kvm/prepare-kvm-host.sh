@@ -40,8 +40,10 @@ sudo virsh net-dumpxml airgap-training
 echo ""
 echo "=== KVM ホスト準備完了 ==="
 echo ""
+source "$SCRIPT_DIR/../rhel-version.conf"
+
 echo "次のステップ:"
-echo "  1. RHEL 10 ISO を用意"
-echo "  2. ./create-rhel-vm.sh /path/to/rhel10.iso を実行"
+echo "  1. RHEL ${RHEL_MAJOR} ISO を用意"
+echo "  2. ./create-rhel-vm.sh /path/to/rhel${RHEL_MAJOR}.iso を実行"
 echo "  3. (オプション) Windows 11 ISO を用意"
 echo "  4. ./create-windows-vm.sh /path/to/win11.iso を実行"

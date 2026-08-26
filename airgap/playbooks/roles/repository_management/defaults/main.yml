@@ -4,12 +4,13 @@
 # Repository server settings
 repo_server_ip: ""
 repo_base: "http://{{ repo_server_ip }}/repo"
+ubi10_repo_base: "http://{{ repo_server_ip }}/ubi10"
 
 # Repository management control
 disable_unmanaged_repos: true  # Disable repositories not in 'repositories' list
 repos_to_preserve: []  # Repository files to preserve (e.g., ['redhat.repo'])
 
-# Repository configurations (list of dictionaries)
+# VM 用リポジトリ (RHEL DVD ISO から配信)
 repositories:
   - name: "BaseOS"
     file: "baseos-http"
@@ -20,11 +21,33 @@ repositories:
     gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
     metadata_expire: -1
     state: present
-  
+
   - name: "AppStream"
     file: "appstream-http"
     description: "RHEL AppStream via local nginx"
     baseurl: "{{ repo_base }}/AppStream"
+    enabled: true
+    gpgcheck: true
+    gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+    metadata_expire: -1
+    state: present
+
+# コンテナ用リポジトリ (UBI 10 ミラーから配信)
+ubi10_repositories:
+  - name: "UBI10-BaseOS"
+    file: "ubi10-baseos-http"
+    description: "UBI 10 BaseOS via local nginx"
+    baseurl: "{{ ubi10_repo_base }}/BaseOS"
+    enabled: true
+    gpgcheck: true
+    gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+    metadata_expire: -1
+    state: present
+
+  - name: "UBI10-AppStream"
+    file: "ubi10-appstream-http"
+    description: "UBI 10 AppStream via local nginx"
+    baseurl: "{{ ubi10_repo_base }}/AppStream"
     enabled: true
     gpgcheck: true
     gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"

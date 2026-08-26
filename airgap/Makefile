@@ -1,6 +1,13 @@
 SHELL := /bin/bash -o pipefail
 .DEFAULT_GOAL := help
 
+-include rhel-version.conf
+RHEL_VERSION ?= 9.4
+RHEL_MAJOR   ?= 9
+RHEL_QCOW2     := rhel-$(RHEL_VERSION)-x86_64-kvm.qcow2
+RHEL_ISO        := rhel-$(RHEL_VERSION)-x86_64-dvd.iso
+RHEL_OS_VARIANT := rhel$(RHEL_MAJOR).0
+
 BUNDLE := offline-resources
 IMG_DIR := /var/lib/libvirt/images
 INVENTORY := /tmp/airgap-test-inventory.yml
@@ -46,7 +53,7 @@ setup-rhel-vms: setup-network ## RHEL VM (repo-server + rhel-target) を作成�
 			echo "$$vm: already exists"; \
 			continue; \
 		fi; \
-		cp $(BUNDLE)/vm-images/rhel-10.2-x86_64-kvm.qcow2 /tmp/$$vm.qcow2; \
+		cp $(BUNDLE)/vm-images/$(RHEL_QCOW2) /tmp/$$vm.qcow2; \
 		if [ "$$vm" = "rhel-target" ]; then \
 			EXTRA="--run-command 'dnf remove -y podman 2>/dev/null; true'"; \
 		else \
@@ -64,13 +71,13 @@ setup-rhel-vms: setup-network ## RHEL VM (repo-server + rhel-target) を作成�
 	@sudo virsh dominfo repo-server >/dev/null 2>&1 && sudo virsh start repo-server 2>/dev/null || \
 		sudo virt-install --name repo-server --import \
 			--disk path=$(IMG_DIR)/repo-server.qcow2,format=qcow2 \
-			--memory 2048 --vcpus 2 --os-variant rhel10.0 \
+			--memory 2048 --vcpus 2 --os-variant $(RHEL_OS_VARIANT) \
 			--network network=airgap-training,mac=$(REPO_MAC) \
 			--graphics vnc --noautoconsole 2>&1 | tail -1
 	@sudo virsh dominfo rhel-target >/dev/null 2>&1 && sudo virsh start rhel-target 2>/dev/null || \
 		sudo virt-install --name rhel-target --import \
 			--disk path=$(IMG_DIR)/rhel-target.qcow2,format=qcow2 \
-			--memory 4096 --vcpus 2 --os-variant rhel10.0 \
+			--memory 4096 --vcpus 2 --os-variant $(RHEL_OS_VARIANT) \
 			--network network=airgap-training,mac=$(RHEL_MAC) \
 			--graphics vnc --noautoconsole 2>&1 | tail -1
 	@echo "Waiting for VMs..."; sleep 15
@@ -129,7 +136,7 @@ transfer-rhel: ## RHEL VM にリソースを転送
 	done
 	@echo "=== DVD ISO → repo-server ==="
 	@ansible -i $(INVENTORY) repo-server -m copy \
-		-a "src=$(BUNDLE)/iso/rhel-10.2-x86_64-dvd.iso dest=/opt/rhel10.iso" \
+		-a "src=$(BUNDLE)/iso/$(RHEL_ISO) dest=/opt/rhel$(RHEL_MAJOR).iso" \
 		-e "ansible_ssh_common_args='$(SSH_EXTRA)'" 2>&1 | grep -E 'changed|ok'
 	@echo "=== Packages → repo-server ==="
 	@ansible -i $(INVENTORY) repo-server -m file \

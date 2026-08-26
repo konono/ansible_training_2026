@@ -4,20 +4,23 @@
   become: true
   gather_facts: false
 
+  vars_files:
+    - ../group_vars/all.yml
+
   vars:
     bundle_dir: "{{ playbook_dir }}/../offline-resources"
 
   tasks:
     - name: DVD ISO の存在を確認
       ansible.builtin.stat:
-        path: /opt/rhel10.iso
+        path: "{{ rhel_installer_iso }}"
         get_checksum: false
       register: iso_dest
 
     - name: DVD ISO を配置
       ansible.builtin.copy:
-        src: "{{ bundle_dir }}/iso/rhel-10.2-x86_64-dvd.iso"
-        dest: /opt/rhel10.iso
+        src: "{{ bundle_dir }}/iso/{{ rhel_iso_filename }}"
+        dest: "{{ rhel_installer_iso }}"
         mode: '0644'
       when: not iso_dest.stat.exists
 

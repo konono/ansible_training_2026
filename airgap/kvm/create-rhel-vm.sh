@@ -1,18 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../rhel-version.conf"
+
 ISO_PATH="${1:-}"
-VM_NAME="${2:-rhel10-airgap-target}"
+VM_NAME="${2:-rhel${RHEL_MAJOR}-airgap-target}"
 MEMORY="${3:-4096}"
 VCPUS="${4:-4}"
 DISK_SIZE="${5:-100}"
 
 if [[ -z "$ISO_PATH" ]]; then
-    echo "使用方法: $0 <RHEL10 ISO パス> [VM名] [メモリMB] [vCPU数] [ディスクGB]"
+    echo "使用方法: $0 <RHEL${RHEL_MAJOR} ISO パス> [VM名] [メモリMB] [vCPU数] [ディスクGB]"
     echo ""
     echo "例:"
-    echo "  $0 /path/to/rhel-10-x86_64-dvd.iso"
-    echo "  $0 /path/to/rhel-10-x86_64-dvd.iso rhel10-training 8192 4 200"
+    echo "  $0 /path/to/rhel-${RHEL_VERSION}-x86_64-dvd.iso"
+    echo "  $0 /path/to/rhel-${RHEL_VERSION}-x86_64-dvd.iso rhel${RHEL_MAJOR}-training 8192 4 200"
     exit 1
 fi
 
@@ -21,7 +24,7 @@ if [[ ! -f "$ISO_PATH" ]]; then
     exit 1
 fi
 
-echo "=== RHEL 10 Airgap VM 作成 ==="
+echo "=== RHEL ${RHEL_MAJOR} Airgap VM 作成 ==="
 echo "  VM名:     $VM_NAME"
 echo "  ISO:      $ISO_PATH"
 echo "  メモリ:   ${MEMORY}MB"
@@ -43,7 +46,7 @@ sudo virt-install \
     --vcpus "$VCPUS" \
     --disk size="$DISK_SIZE" \
     --cdrom "$ISO_PATH" \
-    --os-variant rhel10-unknown \
+    --os-variant "rhel${RHEL_MAJOR}-unknown" \
     --network network=airgap-training,mac=52:54:00:AA:BB:10 \
     --graphics vnc,listen=0.0.0.0 \
     --noautoconsole

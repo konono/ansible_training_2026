@@ -1,9 +1,19 @@
 ---
+# RHEL VM バージョン設定 — rhel-version.conf と同期すること
+rhel_version: "9.4"
+rhel_major: "{{ rhel_version.split('.')[0] }}"
+rhel_iso_filename: "rhel-{{ rhel_version }}-x86_64-dvd.iso"
+rhel_qcow2_filename: "rhel-{{ rhel_version }}-x86_64-kvm.qcow2"
+rhel_installer_iso: "/opt/rhel{{ rhel_major }}.iso"
+rhel_os_variant: "rhel{{ rhel_major }}.0"
+
 bundle_staging_dir: /opt/airgap-bundle
 training_base_dir: /opt/training
+ubi10_repo_dir: /opt/ubi10-repos
+ubi10_repo_enabled: true
+packages_dir: /opt/packages
 
 repo_server_ip: "{{ hostvars[groups['repo_server'][0]]['ansible_host'] if (groups['repo_server'] | default([])) | length > 0 else '' }}"
-rhel_installer_iso: /opt/rhel10.iso
 
 controller_image: "training-controller:latest"
 node_image: "training-linux-node:latest"

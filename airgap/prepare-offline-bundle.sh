@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/rhel-version.conf"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUNDLE_DIR="$SCRIPT_DIR/offline-resources"
 
@@ -96,10 +97,38 @@ build_and_save_images() {
 }
 
 verify_dvd_iso() {
-    log_info "=== Phase 2: RHEL 10 DVD ISO の確認 ==="
-    log_info "RPMパッケージはリポジトリサーバーの RHEL 10 DVD ISO から提供されます"
+    log_info "=== Phase 2: RHEL ${RHEL_MAJOR} DVD ISO の確認 ==="
+    log_info "RPMパッケージはリポジトリサーバーの RHEL ${RHEL_MAJOR} DVD ISO から提供されます"
     log_info "リポジトリサーバーに DVD ISO を配置し、repo-server-setup.yml を実行してください"
     log_info "Phase 2 完了"
+}
+
+mirror_ubi10_repos() {
+    log_info "=== Phase 2.5: UBI 10 リポジトリのミラー ==="
+    log_info "コンテナ用 UBI 10 リポジトリをミラー中..."
+
+    mkdir -p "$BUNDLE_DIR/ubi10-repos"
+
+    dnf reposync \
+        --repoid=ubi-10-for-x86_64-baseos-rpms \
+        --repoid=ubi-10-for-x86_64-appstream-rpms \
+        --download-metadata \
+        --download-path="$BUNDLE_DIR/ubi10-repos/" 2>&1 | tail -5
+
+    # BaseOS / AppStream の名前に正規化
+    if [[ -d "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-baseos-rpms" ]]; then
+        mv "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-baseos-rpms" \
+           "$BUNDLE_DIR/ubi10-repos/BaseOS"
+    fi
+    if [[ -d "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-appstream-rpms" ]]; then
+        mv "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-appstream-rpms" \
+           "$BUNDLE_DIR/ubi10-repos/AppStream"
+    fi
+
+    log_info "UBI 10 ミラーサイズ:"
+    du -sh "$BUNDLE_DIR/ubi10-repos/"* 2>/dev/null || true
+
+    log_info "Phase 2.5 完了"
 }
 
 download_binaries() {
@@ -210,6 +239,16 @@ download_pip_packages() {
         ansible pywinrm jmespath ansible-lint 2>/dev/null || \
         log_warn "一部pipパッケージのダウンロードに失敗"
 
+    log_info "RHEL 9 (Python 3.9) 用パッケージも追加ダウンロード中..."
+    python3 -m pip download --only-binary=:all: \
+        --python-version 3.9 \
+        --platform manylinux2014_x86_64 \
+        --platform manylinux_2_17_x86_64 \
+        --platform manylinux_2_28_x86_64 \
+        -d "$BUNDLE_DIR/pip-packages/" \
+        ansible pywinrm jmespath ansible-lint 2>/dev/null || \
+        log_warn "Python 3.9 用パッケージのダウンロードに一部失敗"
+
     log_info "Phase 4 完了"
 }
 
@@ -277,8 +316,8 @@ print_summary() {
     echo ""
 
     log_info "次のステップ:"
-    echo "  1. RHEL 10 DVD ISO を offline-resources/iso/ に配置"
-    echo "  2. RHEL 10 KVM ゲストイメージを offline-resources/vm-images/ に配置"
+    echo "  1. RHEL ${RHEL_MAJOR} DVD ISO を offline-resources/iso/ に配置"
+    echo "  2. RHEL ${RHEL_MAJOR} KVM ゲストイメージを offline-resources/vm-images/ に配置"
     echo "  3. (Windows用) Windows 11 qcow2 を offline-resources/vm-images/ に配置"
     echo "  4. airgap/ ディレクトリ全体をUSBドライブ等にコピー"
     echo "  5. airgap環境のAnsibleコントローラに転送"
@@ -297,6 +336,7 @@ main() {
     create_directories
     build_and_save_images
     verify_dvd_iso
+    mirror_ubi10_repos
     download_binaries
     download_windows_packages
     download_pip_packages

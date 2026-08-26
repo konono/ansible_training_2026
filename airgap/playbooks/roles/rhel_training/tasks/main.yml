@@ -47,10 +47,28 @@
     dest: /opt/airgap/ansible.cfg
     mode: '0644'
 
+- name: Python バージョンを確認
+  ansible.builtin.command: python3 --version
+  register: python3_version
+  changed_when: false
+
+- name: python3.12 をインストール（RHEL 9 の場合）
+  ansible.builtin.dnf:
+    name:
+      - python3.12
+      - python3.12-pip
+    state: present
+  when: "'3.9' in python3_version.stdout or '3.11' in python3_version.stdout"
+
 - name: python3-pip をインストール
   ansible.builtin.dnf:
     name: python3-pip
     state: present
+  when: "'3.12' in python3_version.stdout or '3.13' in python3_version.stdout"
+
+- name: pip で使用する実行ファイルを決定
+  ansible.builtin.set_fact:
+    pip_executable: "{{ 'pip3.12' if ('3.9' in python3_version.stdout or '3.11' in python3_version.stdout) else 'pip3' }}"
 
 - name: ansible-playbook がインストール済みか確認
   ansible.builtin.command: ansible-playbook --version
@@ -62,6 +80,7 @@
   ansible.builtin.pip:
     name: ansible-core
     extra_args: "--no-index --find-links={{ bundle_staging_dir }}/pip-packages/"
+    executable: "{{ pip_executable }}"
   when: ansible_check.rc != 0
 
 - name: Ansible コレクションを配置

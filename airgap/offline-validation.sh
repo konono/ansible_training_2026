@@ -2,6 +2,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/rhel-version.conf"
 BUNDLE_DIR="${1:-$SCRIPT_DIR/offline-resources}"
 
 RED='\033[0;31m'
@@ -96,7 +97,7 @@ check_dir_notempty "pip-packages-windows" "Windows 向け pip パッケージ"  
 echo ""
 
 # --- DVD ISO ---
-echo "■ RHEL 10 DVD ISO (iso/)"
+echo "■ RHEL ${RHEL_MAJOR} DVD ISO (iso/)"
 if compgen -G "$BUNDLE_DIR/iso/rhel-*.iso" > /dev/null 2>&1; then
     local_iso=$(ls "$BUNDLE_DIR/iso/rhel-"*.iso 2>/dev/null | head -1)
     size=$(du -sh "$local_iso" 2>/dev/null | awk '{print $1}')
@@ -113,6 +114,12 @@ else
     echo -e "  ${RED}[NG]${NC} DVD ISO — iso/rhel-*.iso が見つかりません"
     ((FAIL++))
 fi
+echo ""
+
+# --- UBI 10 ミラーリポジトリ ---
+echo "■ UBI 10 ミラーリポジトリ (ubi10-repos/)"
+check_dir_notempty "ubi10-repos/BaseOS"    "UBI 10 BaseOS リポジトリ"
+check_dir_notempty "ubi10-repos/AppStream" "UBI 10 AppStream リポジトリ"
 echo ""
 
 # --- pip パッケージ ---
@@ -167,7 +174,7 @@ echo ""
 
 # --- VM イメージ（開発テスト用、オプション）---
 echo "■ VM イメージ (vm-images/) — 開発テスト用"
-check_file "vm-images/rhel-10.2-x86_64-kvm.qcow2" "RHEL KVM ゲストイメージ"    "false"
+check_file "vm-images/rhel-${RHEL_VERSION}-x86_64-kvm.qcow2" "RHEL KVM ゲストイメージ"    "false"
 check_file "vm-images/windows-11-25h2.qcow2"       "Windows 11 qcow2"           "false"
 echo ""
 

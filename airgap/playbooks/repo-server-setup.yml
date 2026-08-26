@@ -1,5 +1,5 @@
 ---
-- name: RHEL 10 ローカルリポジトリサーバーセットアップ
+- name: "RHEL {{ rhel_major }} ローカルリポジトリサーバーセットアップ"
   hosts: repo_server
   become: true
   gather_facts: true
@@ -23,7 +23,7 @@
       ansible.builtin.fail:
         msg: >-
           RHEL ISO ファイルが見つかりません: {{ rhel_installer_iso }}
-          リポジトリサーバーに RHEL 10 DVD ISO を配置してください。
+          リポジトリサーバーに RHEL {{ rhel_major }} DVD ISO を配置してください。
       when: not iso_check.stat.exists
 
   roles:
@@ -31,6 +31,42 @@
     - create_local_repository
 
   post_tasks:
+    - name: UBI 10 リポジトリソースの存在を確認
+      ansible.builtin.stat:
+        path: "{{ bundle_staging_dir }}/ubi10-repos/BaseOS"
+      register: ubi10_source_check
+
+    - name: UBI 10 リポジトリディレクトリを作成
+      ansible.builtin.file:
+        path: "{{ ubi10_repo_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - BaseOS
+        - AppStream
+      when: ubi10_source_check.stat.exists | default(false)
+
+    - name: UBI 10 BaseOS リポジトリを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_staging_dir }}/ubi10-repos/BaseOS/"
+        dest: "{{ ubi10_repo_dir }}/BaseOS/"
+        remote_src: true
+        mode: '0644'
+      when: ubi10_source_check.stat.exists | default(false)
+
+    - name: UBI 10 AppStream リポジトリを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_staging_dir }}/ubi10-repos/AppStream/"
+        dest: "{{ ubi10_repo_dir }}/AppStream/"
+        remote_src: true
+        mode: '0644'
+      when: ubi10_source_check.stat.exists | default(false)
+
+    - name: UBI 10 リポジトリが未配置の場合の通知
+      ansible.builtin.debug:
+        msg: "UBI 10 ミラーリポジトリが見つかりません。コンテナ内の dnf install には prepare-offline-bundle.sh で UBI 10 ミラーを作成してください。"
+      when: not (ubi10_source_check.stat.exists | default(false))
+
     - name: Windows パッケージディレクトリを作成
       ansible.builtin.file:
         path: "{{ packages_dir }}"
@@ -59,10 +95,15 @@
           ========================================
           ローカルリポジトリサーバーのセットアップが完了しました！
 
-          リポジトリURL:
+          RHEL {{ rhel_major }} リポジトリURL (VM 用):
             BaseOS:    http://{{ ansible_host }}/repo/BaseOS
             AppStream: http://{{ ansible_host }}/repo/AppStream
-            Packages:  http://{{ ansible_host }}/packages/
+
+          UBI 10 リポジトリURL (コンテナ用):
+            BaseOS:    http://{{ ansible_host }}/ubi10/BaseOS
+            AppStream: http://{{ ansible_host }}/ubi10/AppStream
+
+          Packages:  http://{{ ansible_host }}/packages/
 
           研修ノードはこのサーバーを yum リポジトリとして使用します。
           ========================================
