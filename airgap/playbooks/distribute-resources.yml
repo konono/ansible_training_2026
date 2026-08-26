@@ -36,6 +36,21 @@
         dest: /opt/airgap-bundle/packages/
         mode: '0644'
 
+    - name: UBI 10 ミラーリポジトリの存在を確認
+      ansible.builtin.stat:
+        path: "{{ bundle_dir }}/ubi10-repos/BaseOS"
+      register: ubi10_local_check
+      delegate_to: localhost
+      become: false
+
+    - name: UBI 10 ミラーリポジトリを配置
+      ansible.builtin.copy:
+        src: "{{ bundle_dir }}/ubi10-repos/"
+        dest: /opt/airgap-bundle/ubi10-repos/
+        directory_mode: '0755'
+        mode: '0644'
+      when: ubi10_local_check.stat.exists | default(false)
+
 - name: Linux 演習サーバーへのリソース配置
   hosts: rhel
   become: true

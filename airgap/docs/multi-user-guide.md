@@ -1,4 +1,4 @@
-# マルチユーザー研修環境ガイド
+# マルチユーザートレーニング環境ガイド
 
 1 台の Linux サーバーに複数人分の演習環境を構築し、各受講者が自分の Windows 端末から独立して利用するための手順書です。
 
@@ -24,13 +24,13 @@ Windows クライアント                    Linux サーバー (192.168.100.10
 - **サブネット**: `172.20.{user_id}.0/24`（ユーザーごとに独立）
 - **コンテナ名**: `user{id}_controller`, `user{id}_node1` ...（名前衝突なし）
 - **SSH ポート**: `2200 + user_id`（最大 99 人分）
-- **研修資材**: `/opt/training/user{id}/`（workspace が独立）
+- **トレーニング資材**: `/opt/training/user{id}/`（workspace が独立）
 
 ## 前提条件
 
 ### Linux サーバー
 
-- RHEL 10（podman + docker-compose インストール済み）
+- RHEL 9（podman + docker-compose インストール済み）
 - リポジトリサーバー構築済み（`repo-server-setup.yml` + `rhel-setup.yml` 実行済み）
 - コンテナイメージロード済み
 - `/opt/airgap/` に airgap ディレクトリが配置済み
@@ -56,7 +56,7 @@ Windows クライアント                    Linux サーバー (192.168.100.10
 # 1. training サーバーに SSH 接続
 ssh root@<training の IP>
 ```
-パスワード: `<管理者に確認>`
+パスワード: `password`（デフォルト）
 
 ```bash
 # 2. 演習環境を構築（IP は SSH 接続元から自動取得されます）
@@ -165,7 +165,7 @@ rm -rf /opt/training/user*
 |---|---|
 | コンテナイメージ | 全ユーザー共有（read-only、1 回ロード） |
 | リポジトリサーバー | 全ユーザー共有（HTTP 経由） |
-| 研修資材 tar.gz | 1 ファイル → 各ユーザーに展開 |
+| トレーニング資材 tar.gz | 1 ファイル → 各ユーザーに展開 |
 | workspace | ユーザーごとに独立ディレクトリ |
 | コンテナ | ユーザーごとに 5 台（独立サブネット） |
 

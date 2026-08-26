@@ -51,6 +51,7 @@
         src: "{{ bundle_staging_dir }}/ubi10-repos/BaseOS/"
         dest: "{{ ubi10_repo_dir }}/BaseOS/"
         remote_src: true
+        directory_mode: '0755'
         mode: '0644'
       when: ubi10_source_check.stat.exists | default(false)
 
@@ -59,6 +60,7 @@
         src: "{{ bundle_staging_dir }}/ubi10-repos/AppStream/"
         dest: "{{ ubi10_repo_dir }}/AppStream/"
         remote_src: true
+        directory_mode: '0755'
         mode: '0644'
       when: ubi10_source_check.stat.exists | default(false)
 

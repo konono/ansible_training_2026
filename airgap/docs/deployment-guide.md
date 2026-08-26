@@ -1,18 +1,18 @@
-# 構築ガイド — お客様環境での研修環境セットアップ
+# 構築ガイド — オフライン環境でのトレーニング環境セットアップ
 
-Windows クライアント + Linux サーバー構成で、マルチユーザー対応の Ansible 研修環境を構築する手順書です。
+Windows クライアント + Linux サーバー構成で、マルチユーザー対応の Ansible トレーニング環境を構築する手順書です。
 1 台の Linux サーバーに複数人分の演習環境を構築し、各受講者が Windows 端末から SSH で接続して演習を行います。
 
 ## 構成図
 
 ```
-[管理者 PC / USB]                [お客様 airgap 環境]
-  │                               ├── bastion (RHEL 10) ← Ansible コントローラ
+[管理者 PC / USB]                [オフライン環境]
+  │                               ├── bastion (RHEL 9) ← Ansible コントローラ
   │  airgap/ を持ち込み            │     └── ansible-playbook を実行
-  └──────────────────────────────>├── repository (RHEL 10)
-                                  │     └── DVD ISO → nginx HTTP 配信
-                                  ├── training (RHEL 10)
-                                  │     ├── podman + コンテナイメージ
+  └──────────────────────────────>├── repository (RHEL 9)
+                                  │     └── DVD ISO + UBI 10 ミラー → nginx 配信
+                                  ├── training (RHEL 9)
+                                  │     ├── podman + コンテナイメージ (UBI 10)
                                   │     ├── /opt/airgap/ (スクリプト)
                                   │     ├── user1 環境 (port 2201)
                                   │     ├── user2 環境 (port 2202)
@@ -21,11 +21,15 @@ Windows クライアント + Linux サーバー構成で、マルチユーザー
                                         └── SSH で training に接続して演習
 ```
 
+> **バージョン構成**: VM (bastion, repository, training) は RHEL 9 ベース。
+> 演習用コンテナは UBI 10 ベースのため、演習ドキュメントの出力例はそのまま使えます。
+> リポジトリサーバーは VM 用 (RHEL 9 DVD ISO) とコンテナ用 (UBI 10 ミラー) の両方を配信します。
+
 ## 前提条件
 
 ### 持ち込み資材の準備（オンライン環境で実施）
 
-お客様環境に持ち込む前に、インターネット接続のある RHEL 10 マシンでバンドルを作成します。
+オフライン環境に持ち込む前に、インターネット接続のある Linux マシンでバンドルを作成します。
 
 ```bash
 # 1. リポジトリをクローン
@@ -35,11 +39,12 @@ cd ansible_training_2026/airgap
 # 2. バンドル作成（コンテナイメージビルド + パッケージダウンロード）
 ./prepare-offline-bundle.sh
 
-# 3. RHEL 10 DVD ISO を入手して配置
+# 3. RHEL DVD ISO を入手して配置
 #    Red Hat カスタマーポータル: https://access.redhat.com/downloads/content/rhel
 #    ※ BaseOS + AppStream を含む DVD ISO（Boot ISO は不可）
+#    ※ rhel-version.conf に設定したバージョンと一致する ISO を使用
 mkdir -p offline-resources/iso/
-cp /path/to/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
+cp /path/to/rhel-9.4-x86_64-dvd.iso offline-resources/iso/
 
 # 4. バンドルの完全性を確認
 ./offline-validation.sh
@@ -58,9 +63,9 @@ cp -r ../airgap/ /mnt/usb/
 
 | 役割 | OS | CPU | メモリ | ディスク | 台数 |
 |---|---|---|---|---|---|
-| bastion（コントローラ） | RHEL 10 | 2 vCPU | 4 GB | 40 GB | 1 |
-| repository（リポジトリサーバー） | RHEL 10 | 2 vCPU | 2 GB | 30 GB | 1 |
-| training（Linux 演習サーバー） | RHEL 10 | 下表参照 | 下表参照 | 下表参照 | 1 |
+| bastion（コントローラ） | RHEL 9 | 2 vCPU | 4 GB | 40 GB | 1 |
+| repository（リポジトリサーバー） | RHEL 9 | 2 vCPU | 2 GB | 30 GB | 1 |
+| training（Linux 演習サーバー） | RHEL 9 | 下表参照 | 下表参照 | 下表参照 | 1 |
 | Windows クライアント | Windows 10/11 | — | — | — | 受講者数 |
 
 #### training サーバーのスペック（受講者数別）
@@ -86,7 +91,7 @@ cp -r ../airgap/ /mnt/usb/
 | training | 22/tcp（bastion + Windows から）, 2201-2299/tcp（受講者ごとの SSH） | 80/tcp（repository へ） |
 | Windows | 22/tcp（bastion から）, 3389/tcp（RDP） | 22, 2201-2299/tcp（training へ） |
 
-すべてのマシンが同一ネットワーク上にあること。インターネット接続は不要（airgap）。
+すべてのマシンが同一ネットワーク上にあること。インターネット接続は不要。
 
 ---
 
@@ -121,7 +126,7 @@ tar xzf /mnt/usb/airgap-offline-resources.tar.gz
 
 # DVD ISO が別ファイルの場合
 mkdir -p offline-resources/iso
-cp /mnt/usb/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
+cp /mnt/usb/rhel-9.4-x86_64-dvd.iso offline-resources/iso/
 
 # 資材の完全性を確認
 ./offline-validation.sh
@@ -137,7 +142,7 @@ cd /opt/airgap
 ./setup-controller.sh
 ```
 
-> ISO が `offline-resources/iso/` にあれば自動検出します。別の場所にある場合は引数で指定: `./setup-controller.sh /path/to/rhel10.iso`
+> ISO が `offline-resources/iso/` にあれば `rhel-version.conf` のバージョンに一致するものを自動検出します。別の場所にある場合は引数で指定: `./setup-controller.sh /path/to/rhel9.iso`
 
 このスクリプトが自動で行うこと:
 1. DVD ISO をマウントしてローカルリポジトリを設定
@@ -148,7 +153,7 @@ cd /opt/airgap
 
 ### Step 3: インベントリの編集
 
-お客様環境の IP アドレスとパスワードに合わせて編集します。
+デプロイ先環境の IP アドレスとパスワードに合わせて編集します。
 
 ```bash
 vi /opt/airgap/inventory/hosts.yml
@@ -241,7 +246,7 @@ code --install-extension "\\<bastion>\share\packages\ms-vscode-remote.remote-ssh
 # 1. training サーバーに SSH 接続
 ssh root@<training の IP>
 ```
-パスワード: `<管理者に確認>`
+パスワード: `password`（デフォルト）
 
 ```bash
 # 2. 演習環境を構築（IP は SSH 接続元から自動取得されます）

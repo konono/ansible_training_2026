@@ -1,35 +1,39 @@
-# Airgap 環境対応 Ansible 研修環境
+# オフライン環境対応 Ansible トレーニング環境
 
-インターネット接続のないエアギャップ環境で Ansible 研修を実施するためのツールキットです。
+インターネット接続のないオフライン環境で Ansible トレーニングを実施するためのツールキットです。
 
 ## アーキテクチャ
 
 ```
 ┌─────────────────────────┐         ┌──────────────────────────────────────────┐
-│ オンライン環境            │  USB等  │ エアギャップ環境                          │
+│ オンライン環境            │  USB等  │ オフライン環境                             │
 │                         │ ──────> │                                          │
-│ prepare-offline-        │         │  bastion (RHEL 10)                       │
+│ prepare-offline-        │         │  bastion (RHEL 9)                        │
 │ bundle.sh を実行         │         │    └─ Ansible コントローラ                │
 │                         │         │                                          │
-│ offline-resources/      │         │  repo-server (RHEL 10)                   │
-│ を生成                   │         │    └─ DVD ISO → nginx HTTP 配信           │
+│ offline-resources/      │         │  repo-server (RHEL 9)                    │
+│ を生成                   │         │    └─ DVD ISO + UBI 10 → nginx 配信      │
 │                         │         │                                          │
-│                         │         │  training (RHEL 10)                      │
+│                         │         │  training (RHEL 9)                       │
 │                         │         │    ├─ user1: controller/node1-3/lb       │
 │                         │         │    ├─ user2: controller/node1-3/lb       │
-│                         │         │    └─ ...                                │
+│                         │         │    └─ ... (コンテナは UBI 10 ベース)       │
 │                         │         │                                          │
 │                         │         │  Windows クライアント × N 台              │
 │                         │         │    └─ SSH で training に接続して演習       │
 └─────────────────────────┘         └──────────────────────────────────────────┘
 ```
 
+> **バージョン構成**: VM は RHEL 9 ベース、演習用コンテナは UBI 10 (Red Hat Universal Base Image) ベースです。
+> バージョンは `rhel-version.conf` と `group_vars/all.yml` で管理されています。
+> 詳細は [開発者ガイド](docs/development-guide.md) を参照してください。
+
 ## ドキュメント
 
 | ドキュメント | 対象者 | 内容 |
 |---|---|---|
 | [バンドル作成ガイド](docs/bundle-preparation.md) | エンジニア | オンライン環境でバンドルを作成する手順 |
-| [構築ガイド](docs/deployment-guide.md) | エンジニア / お客様 | airgap 環境に研修環境を構築する手順 |
+| [構築ガイド](docs/deployment-guide.md) | エンジニア | オフライン環境にトレーニング環境を構築する手順 |
 | [開発者ガイド](docs/development-guide.md) | 開発者 | テスト環境構築・アーキテクチャ・改修方法 |
 
 ## クイックスタート
@@ -44,7 +48,7 @@ cd airgap/
 
 # 3. airgap/ ディレクトリ全体を USB 等で持ち込み
 
-# 4. お客様環境でデプロイ
+# 4. オフライン環境でデプロイ
 #    → 詳細は docs/deployment-guide.md
 ```
 
@@ -91,19 +95,19 @@ airgap/
 │       ├── win_client_ssh/            Windows OpenSSH 設定
 │       └── win_client_vscode/         Windows VSCode + Remote-SSH
 ├── offline-resources/                 オフラインリソース（git 管理外）
-│   ├── iso/                           RHEL 10 DVD ISO
+│   ├── iso/                           RHEL DVD ISO
 │   ├── container-images/              コンテナイメージ (.tar)
 │   ├── binaries/                      docker-compose, sshpass 等
 │   ├── packages/                      7-Zip MSI, Chocolatey nupkg 等
 │   ├── pip-packages/                  Python パッケージ (.whl)
 │   ├── ansible-collections/           Ansible コレクション
-│   ├── training-materials/            研修資材アーカイブ
+│   ├── training-materials/            トレーニング資材アーカイブ
 │   └── checksums.sha256
 ├── kvm/                               テスト用 KVM スクリプト
 └── docs/                              ドキュメント
 ```
 
-## 研修環境構成（マルチユーザー）
+## トレーニング環境構成（マルチユーザー）
 
 各受講者に独立した環境がデプロイされます。
 

@@ -1,10 +1,10 @@
 # バンドル作成ガイド
 
-オンライン環境で airgap 用のオフラインバンドルを作成する手順です。
+オンライン環境でオフラインバンドルを作成する手順です。
 
 ## 必要な環境
 
-- RHEL 10 / CentOS 10 または RHEL 互換 OS
+- RHEL 9 以降（RHEL 10 でも動作可）
 - インターネット接続
 - 以下のコマンド: `podman`, `python3`, `pip`, `git`, `curl`, `dnf`, `ansible`, `skopeo`
 - ディスク空き: 50GB 以上
@@ -31,7 +31,7 @@ cd airgap/
 | 3.5 | 7-Zip MSI, Chocolatey nupkg のダウンロード | `packages/` |
 | 4 | pip パッケージのダウンロード | `pip-packages/` |
 | 5 | Ansible コレクションのダウンロード | `ansible-collections/` |
-| 6 | 研修資材のアーカイブ | `training-materials/` |
+| 6 | トレーニング資材のアーカイブ | `training-materials/` |
 | 7 | チェックサム生成 | `checksums.sha256` |
 
 Windows が不要な場合:
@@ -40,13 +40,14 @@ Windows が不要な場合:
 SKIP_WINDOWS=true ./prepare-offline-bundle.sh
 ```
 
-## Step 2: RHEL 10 DVD ISO の入手
+## Step 2: RHEL DVD ISO の入手
 
-Red Hat カスタマーポータルから RHEL 10 DVD ISO をダウンロードし、`offline-resources/iso/` に配置します。
+Red Hat カスタマーポータルから `rhel-version.conf` に設定したバージョンの DVD ISO をダウンロードし、`offline-resources/iso/` に配置します。
 
 ```bash
 mkdir -p offline-resources/iso/
-cp /path/to/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
+# rhel-version.conf の RHEL_VERSION に合わせた ISO を配置
+cp /path/to/rhel-9.4-x86_64-dvd.iso offline-resources/iso/
 ```
 
 - URL: https://access.redhat.com/downloads/content/rhel
@@ -61,13 +62,13 @@ cp /path/to/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
 du -sh offline-resources/*/
 
 # 期待される構成:
-# iso/               ~11GB   RHEL 10 DVD ISO
+# iso/               ~11GB   RHEL DVD ISO
 # container-images/  ~1.7GB  training-controller.tar + training-linux-node.tar
 # binaries/          ~560MB  docker-compose, sshpass, WSL, Podman 等
 # packages/          ~7MB    7-Zip MSI, Chocolatey nupkg
 # pip-packages/      ~62MB   ansible, pywinrm 等
 # ansible-collections/ ~4MB  ansible.windows 等
-# training-materials/  ~114KB 研修資材アーカイブ
+# training-materials/  ~114KB トレーニング資材アーカイブ
 
 # チェックサム検証
 cd offline-resources/
@@ -75,7 +76,7 @@ sha256sum -c checksums.sha256
 ```
 
 > **注意**: VM イメージ（KVM ゲストイメージ、Windows qcow2）はこのバンドルに**含まれません**。
-> お客様環境の VM は VMware, Hyper-V, 物理マシン等で個別に用意します。
+> デプロイ先の VM は VMware, Hyper-V, 物理マシン等で個別に用意します。
 > 開発テスト用の KVM VM イメージの入手方法は [開発者ガイド](development-guide.md) を参照してください。
 
 ## Step 4: 持ち込み用に固める

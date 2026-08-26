@@ -1,6 +1,6 @@
 # 開発者ガイド — テスト・アーキテクチャ・改修
 
-airgap ツールキットの開発・テスト・改修に関するガイドです。
+オフラインデプロイ用ツールキットの開発・テスト・改修に関するガイドです。
 
 ## アーキテクチャ
 
@@ -56,19 +56,20 @@ site.yml
 
 ## テスト用 VM イメージの入手
 
-[バンドル作成ガイド](bundle-preparation.md) で生成される `offline-resources/` にはお客様環境で使うリソースのみが含まれます。開発テストでは追加で KVM 用の VM イメージが必要です。
+[バンドル作成ガイド](bundle-preparation.md) で生成される `offline-resources/` にはデプロイ先環境で使うリソースのみが含まれます。開発テストでは追加で KVM 用の VM イメージが必要です。
 
-### RHEL 10 KVM ゲストイメージ
+### RHEL KVM ゲストイメージ
 
 Red Hat カスタマーポータルからダウンロード:
 
 ```bash
 mkdir -p offline-resources/vm-images/
-cp /path/to/rhel-10.2-x86_64-kvm.qcow2 offline-resources/vm-images/
+# rhel-version.conf の RHEL_VERSION に合わせたイメージを配置
+cp /path/to/rhel-9.4-x86_64-kvm.qcow2 offline-resources/vm-images/
 ```
 
 - URL: https://access.redhat.com/downloads/content/rhel （Cloud and Container Images セクション）
-- サイズ: 約 1.1GB
+- サイズ: 約 1GB
 
 ### Windows 11 qcow2 イメージ（cocoonstack）
 
@@ -166,11 +167,11 @@ all:
 
 ### `-netdev user` は絶対に使わない
 
-QEMU の `-netdev user` はホスト経由でインターネットに到達可能な NAT ゲートウェイ (10.0.2.2) を提供します。この環境でテストすると、airgap で失敗すべきオンラインフォールバックが成功してしまいます。
+QEMU の `-netdev user` はホスト経由でインターネットに到達可能な NAT ゲートウェイ (10.0.2.2) を提供します。この環境でテストすると、オフライン環境で失敗すべきオンラインフォールバックが成功してしまいます。
 
 VM は必ず libvirt の `airgap-training` ネットワーク（`<forward>` なし）上で起動してください。
 
-### airgap 検証は必須
+### オフライン検証は必須
 
 テスト前に全 VM で `ping 8.8.8.8` が `Network is unreachable` を返すことを確認してください。
 
@@ -221,15 +222,41 @@ cd offline-resources/ && find . -type f ! -name 'checksums.sha256' -exec sha256s
 
 リポジトリサーバーの nginx は `/packages/` 配下を autoindex で配信するため、ファイルを置くだけで HTTP アクセス可能になります。
 
-### 研修コンテナ内のリポジトリ設定
+### トレーニングコンテナ内のリポジトリ設定
 
-研修コンテナ（UBI 10 ベース）は UBI リポジトリがデフォルトで有効です。airgap 環境では以下が自動実行されます:
+トレーニングコンテナ（UBI 10 ベース）は UBI リポジトリがデフォルトで有効です。オフライン環境では以下が自動実行されます:
 
 1. UBI リポジトリ (`ubi.repo`) の無効化
 2. `subscription-manager` の repo 管理無効化
 3. リポジトリサーバーの BaseOS/AppStream を設定
 
 これにより `dnf install nginx` 等がリポジトリサーバー経由で動作します。
+
+## RHEL バージョンの切り替え
+
+VM の RHEL バージョンは以下の 2 ファイルで管理されています。両方を同時に変更してください。
+
+| ファイル | 用途 | 変更する値 |
+|---|---|---|
+| `rhel-version.conf` | Shell スクリプト・Makefile | `RHEL_VERSION`, `RHEL_MAJOR` |
+| `group_vars/all.yml` | Ansible Playbook | `rhel_version` |
+
+```bash
+# 例: RHEL 9.4 → 10.2 に切り替え
+
+# 1. rhel-version.conf
+sed -i 's/RHEL_VERSION=9.4/RHEL_VERSION=10.2/' rhel-version.conf
+sed -i 's/RHEL_MAJOR=9/RHEL_MAJOR=10/' rhel-version.conf
+
+# 2. group_vars/all.yml
+sed -i 's/rhel_version: "9.4"/rhel_version: "10.2"/' group_vars/all.yml
+
+# 3. 対応する DVD ISO と KVM イメージを配置
+cp /path/to/rhel-10.2-x86_64-dvd.iso offline-resources/iso/
+cp /path/to/rhel-10.2-x86_64-kvm.qcow2 offline-resources/vm-images/
+```
+
+コンテナイメージ (UBI 10) は RHEL バージョンに依存しないため、切り替え不要です。
 
 ## 既知の制限事項
 

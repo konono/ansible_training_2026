@@ -109,19 +109,38 @@ mirror_ubi10_repos() {
 
     mkdir -p "$BUNDLE_DIR/ubi10-repos"
 
+    UBI_CDN="https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64"
+    UBI_REPO_FILE=$(mktemp /tmp/ubi10-repos-XXXXXX.repo)
+    cat > "$UBI_REPO_FILE" << REPOEOF
+[ubi10-baseos]
+name=UBI 10 BaseOS
+baseurl=${UBI_CDN}/baseos/os
+enabled=1
+gpgcheck=0
+
+[ubi10-appstream]
+name=UBI 10 AppStream
+baseurl=${UBI_CDN}/appstream/os
+enabled=1
+gpgcheck=0
+REPOEOF
+
     dnf reposync \
-        --repoid=ubi-10-for-x86_64-baseos-rpms \
-        --repoid=ubi-10-for-x86_64-appstream-rpms \
+        --config="$UBI_REPO_FILE" \
+        --repoid=ubi10-baseos \
+        --repoid=ubi10-appstream \
         --download-metadata \
         --download-path="$BUNDLE_DIR/ubi10-repos/" 2>&1 | tail -5
 
+    rm -f "$UBI_REPO_FILE"
+
     # BaseOS / AppStream の名前に正規化
-    if [[ -d "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-baseos-rpms" ]]; then
-        mv "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-baseos-rpms" \
+    if [[ -d "$BUNDLE_DIR/ubi10-repos/ubi10-baseos" ]]; then
+        mv "$BUNDLE_DIR/ubi10-repos/ubi10-baseos" \
            "$BUNDLE_DIR/ubi10-repos/BaseOS"
     fi
-    if [[ -d "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-appstream-rpms" ]]; then
-        mv "$BUNDLE_DIR/ubi10-repos/ubi-10-for-x86_64-appstream-rpms" \
+    if [[ -d "$BUNDLE_DIR/ubi10-repos/ubi10-appstream" ]]; then
+        mv "$BUNDLE_DIR/ubi10-repos/ubi10-appstream" \
            "$BUNDLE_DIR/ubi10-repos/AppStream"
     fi
 
