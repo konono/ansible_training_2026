@@ -96,6 +96,7 @@ airgap/
 │       └── win_client_vscode/         Windows VSCode + Remote-SSH
 ├── offline-resources/                 オフラインリソース（git 管理外）
 │   ├── iso/                           RHEL DVD ISO
+│   ├── ubi10-repos/                   UBI 10 ミラーリポジトリ（コンテナ内 dnf 用）
 │   ├── container-images/              コンテナイメージ (.tar)
 │   ├── binaries/                      docker-compose, sshpass 等
 │   ├── packages/                      7-Zip MSI, Chocolatey nupkg 等

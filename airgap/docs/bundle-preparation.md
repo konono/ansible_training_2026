@@ -6,11 +6,12 @@
 
 - RHEL 9 以降（RHEL 10 でも動作可）
 - インターネット接続
-- 以下のコマンド: `podman`, `python3`, `pip`, `git`, `curl`, `dnf`, `ansible`, `skopeo`
-- ディスク空き: 50GB 以上
+- 必須コマンド: `podman`, `python3`, `pip`, `git`, `curl`, `dnf`
+- Windows バンドルも作成する場合: `skopeo`, `ansible-galaxy`
+- ディスク空き: 50GB 以上（UBI 10 ミラー ~2.8GB + コンテナイメージ + ISO）
 
 ```bash
-for cmd in podman python3 git curl dnf ansible skopeo; do
+for cmd in podman python3 git curl dnf skopeo; do
     printf "%-10s " "$cmd:"
     command -v $cmd >/dev/null 2>&1 && echo "OK" || echo "NOT FOUND"
 done
@@ -25,11 +26,12 @@ cd airgap/
 
 | Phase | 処理内容 | 生成先 |
 |---|---|---|
-| 1 | コンテナイメージのビルド・保存 | `container-images/` |
-| 2 | DVD ISO の確認（案内のみ） | — |
+| 1 | コンテナイメージのビルド・保存 (UBI 10 ベース) | `container-images/` |
+| 2 | DVD ISO の確認（案内のみ、手動配置が必要） | — |
+| 2.5 | UBI 10 リポジトリのミラー（コンテナ内 dnf install 用） | `ubi10-repos/` |
 | 3 | docker-compose, sshpass, Podman Windows 等のダウンロード | `binaries/` |
 | 3.5 | 7-Zip MSI, Chocolatey nupkg のダウンロード | `packages/` |
-| 4 | pip パッケージのダウンロード | `pip-packages/` |
+| 4 | pip パッケージのダウンロード (Python 3.12 + 3.9 両対応) | `pip-packages/` |
 | 5 | Ansible コレクションのダウンロード | `ansible-collections/` |
 | 6 | トレーニング資材のアーカイブ | `training-materials/` |
 | 7 | チェックサム生成 | `checksums.sha256` |
@@ -63,12 +65,13 @@ du -sh offline-resources/*/
 
 # 期待される構成:
 # iso/               ~11GB   RHEL DVD ISO
+# ubi10-repos/       ~2.8GB  UBI 10 BaseOS + AppStream ミラー
 # container-images/  ~1.7GB  training-controller.tar + training-linux-node.tar
 # binaries/          ~560MB  docker-compose, sshpass, WSL, Podman 等
-# packages/          ~7MB    7-Zip MSI, Chocolatey nupkg
-# pip-packages/      ~62MB   ansible, pywinrm 等
+# packages/          ~255MB  7-Zip MSI, Chocolatey, VSCode, Python 等
+# pip-packages/      ~120MB  ansible, pywinrm 等 (Python 3.12 + 3.9)
 # ansible-collections/ ~4MB  ansible.windows 等
-# training-materials/  ~114KB トレーニング資材アーカイブ
+# training-materials/  ~164KB トレーニング資材アーカイブ
 
 # チェックサム検証
 cd offline-resources/

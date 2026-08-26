@@ -189,11 +189,13 @@ Red Hat 提供の KVM ゲストイメージはデフォルトで 10GB 未満の�
 
 ```bash
 qemu-img resize image.qcow2 20G  # VM 作成前
-# VM 内で:
-TMPDIR=/dev/shm growpart /dev/vda 3 && xfs_growfs /
+# VM 内で（パーティション番号は lsblk で確認）:
+growpart /dev/vda 4 && xfs_growfs /
+# ディスクフル状態では TMPDIR 指定が必要:
+# TMPDIR=/dev/shm growpart /dev/vda 4 && xfs_growfs /
 ```
 
-`growpart` 自体がテンポラリ領域を必要とするため、ディスクフル状態では `TMPDIR=/dev/shm` が必要です。
+> RHEL 9.4 KVM ゲストイメージのパーティション構成: vda1 (1M BIOS), vda2 (200M EFI), vda3 (1G boot), vda4 (rootfs)。`growpart` の引数はパーティション番号 `4` です。
 
 ## 改修時のガイドライン
 

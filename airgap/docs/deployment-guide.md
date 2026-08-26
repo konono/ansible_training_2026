@@ -146,10 +146,11 @@ cd /opt/airgap
 
 このスクリプトが自動で行うこと:
 1. DVD ISO をマウントしてローカルリポジトリを設定
-2. `gcc`, `make`, `python3-pip` 等の前提パッケージをインストール
-3. `ansible-core` を pip パッケージからオフラインインストール
-4. `sshpass` をソースからビルド
-5. Ansible コレクションをインストール
+2. Python 3.12 のインストール（RHEL 9 の場合、pip パッケージ互換性のため自動判定）
+3. `gcc`, `make` 等の前提パッケージをインストール
+4. `ansible-core` を pip パッケージからオフラインインストール
+5. `sshpass` をソースからビルド
+6. Ansible コレクションをインストール
 
 ### Step 3: インベントリの編集
 
@@ -163,55 +164,73 @@ vi /opt/airgap/inventory/hosts.yml
 all:
   vars:
     ansible_user: root
-    ansible_password: <Linux の root パスワード>
+    ansible_password: password       # 各サーバーの root パスワード
   children:
     repo_server:
       hosts:
         repo-server:
-          ansible_host: <repository の IP>
+          ansible_host: <repository の IP>    # 例: 192.168.100.5
     rhel:
       hosts:
         rhel-target:
-          ansible_host: <training の IP>
+          ansible_host: <training の IP>      # 例: 192.168.100.10
 ```
+
+> **注意**: `transfer-to-bastion.sh` で転送した場合、`inventory/hosts.yml` には開発環境のデフォルト値が入っています。環境に合わせて IP アドレスとパスワードを変更してください。
 
 ### Step 4: Playbook の実行
 
+各 Playbook を順番に実行します。初回は SSH ホストキーが未登録のため `-e` でホストキーチェックを無効化しています。
+
 ```bash
 cd /opt/airgap
+SSH_ARGS='-e ansible_ssh_common_args="-o StrictHostKeyChecking=no"'
 
-# 1. リソース配置（DVD ISO, コンテナイメージ等を各サーバーに配布）
-ansible-playbook -i inventory/hosts.yml playbooks/distribute-resources.yml
+# 1. リソース配置（DVD ISO, UBI 10 ミラー, コンテナイメージ等を各サーバーに配布）
+ansible-playbook -i inventory/hosts.yml playbooks/distribute-resources.yml $SSH_ARGS
 
-# 2. リポジトリサーバーの構築
-ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml
+# 2. リポジトリサーバーの構築（RHEL 9 DVD ISO + UBI 10 ミラーの HTTP 配信）
+ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml $SSH_ARGS
 
 # 3. Linux 演習サーバーの構築
 #    - podman + docker-compose インストール
-#    - ansible-core インストール（deploy-training.sh 用）
+#    - Python 3.12 + ansible-core インストール（deploy-training.sh 用）
 #    - コンテナイメージのロード
 #    - スクリプト・Playbook の配置
 #    - inotify 上限拡張（マルチユーザー対応）
-ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
+ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml $SSH_ARGS
 ```
+
+> 各 Playbook は冪等なので、エラーが発生した場合は修正後に再実行できます。
 
 ### Step 5: 構築後の検証
 
+bastion 上で以下を実行して、構築結果を検証します。
+
 ```bash
-# リポジトリサーバーの確認
-curl -s -o /dev/null -w '%{http_code}' http://<repository>/repo/BaseOS/repodata/repomd.xml
-# → 200
+# リポジトリサーバーの確認（RHEL 9 + UBI 10）
+echo -n "RHEL9 BaseOS: "; curl -s -o /dev/null -w '%{http_code}\n' http://<repository>/repo/BaseOS/repodata/repomd.xml
+echo -n "RHEL9 AppStream: "; curl -s -o /dev/null -w '%{http_code}\n' http://<repository>/repo/AppStream/repodata/repomd.xml
+echo -n "UBI10 BaseOS: "; curl -s -o /dev/null -w '%{http_code}\n' http://<repository>/ubi10/BaseOS/repodata/repomd.xml
+echo -n "UBI10 AppStream: "; curl -s -o /dev/null -w '%{http_code}\n' http://<repository>/ubi10/AppStream/repodata/repomd.xml
+# → 全て 200
 
 # training サーバーにスクリプトが配置されているか
-ssh root@<training> 'ls /opt/airgap/deploy-training.sh'
+sshpass -p password ssh -o StrictHostKeyChecking=no root@<training> 'ls /opt/airgap/deploy-training.sh'
 
 # テスト環境を 1 つ作ってみる
-ssh root@<training> 'cd /opt/airgap && ./deploy-training.sh --test 1'
-# → ssh -p 2201 root@<training> で接続確認
+sshpass -p password ssh -o StrictHostKeyChecking=no root@<training> 'cd /opt/airgap && ./deploy-training.sh --test 1'
+
+# テスト環境に接続して ansible と nginx インストールを確認
+sshpass -p password ssh -o StrictHostKeyChecking=no -p 2201 root@<training> 'ansible --version | head -1'
+sshpass -p password ssh -o StrictHostKeyChecking=no -p 2201 root@<training> 'dnf install -y nginx 2>&1 | tail -1'
+# → "Complete!"
 
 # テスト環境を全て削除
-ssh root@<training> 'cd /opt/airgap && ./destroy-training.sh --test'
+sshpass -p password ssh -o StrictHostKeyChecking=no root@<training> 'cd /opt/airgap && ./destroy-training.sh --test'
 ```
+
+> bastion と各サーバー間に SSH 鍵を配置していない場合、`sshpass` を使ってパスワード認証で接続します。`setup-controller.sh` で `sshpass` は自動的にインストールされます。
 
 ### Step 6: Windows クライアントの事前設定
 
