@@ -137,11 +137,13 @@ cp /mnt/usb/rhel-9.4-x86_64-dvd.iso offline-resources/iso/
 bastion に SSH してコントローラをセットアップします。
 
 ```bash
-ssh root@<bastion の IP>
+ssh <user>@<bastion の IP>
 cd /opt/airgap
-./setup-controller.sh
+./setup-controller.sh          # root または sudo 可能な一般ユーザーで実行
 ```
 
+> root でも一般ユーザー（sudo 権限あり）でも実行できます。一般ユーザーの場合、特権操作は自動で `sudo` されます。
+>
 > ISO が `offline-resources/iso/` にあれば `rhel-version.conf` のバージョンに一致するものを自動検出します。別の場所にある場合は引数で指定: `./setup-controller.sh /path/to/rhel9.iso`
 
 このスクリプトが自動で行うこと:
@@ -154,7 +156,7 @@ cd /opt/airgap
 
 ### Step 3: インベントリの編集
 
-デプロイ先環境の IP アドレスとパスワードに合わせて編集します。
+デプロイ先環境の IP アドレス・ユーザー・パスワードに合わせて編集します。
 
 ```bash
 vi /opt/airgap/inventory/hosts.yml
@@ -163,8 +165,11 @@ vi /opt/airgap/inventory/hosts.yml
 ```yaml
 all:
   vars:
-    ansible_user: root
-    ansible_password: password       # 各サーバーの root パスワード
+    ansible_user: admin              # SSH 接続ユーザー（root または sudo 可能な一般ユーザー）
+    ansible_password: password       # SSH パスワード
+    ansible_become: true             # 特権昇格を有効化
+    ansible_become_method: sudo
+    ansible_become_password: "{{ ansible_password }}"  # sudo パスワード（SSH と同じ場合）
   children:
     repo_server:
       hosts:
@@ -177,6 +182,8 @@ all:
 ```
 
 > **注意**: `transfer-to-bastion.sh` で転送した場合、`inventory/hosts.yml` には開発環境のデフォルト値が入っています。環境に合わせて IP アドレスとパスワードを変更してください。
+>
+> **root で直接接続する場合**: `ansible_user: root` に変更すれば従来通り動作します。`ansible_become` の設定はそのままで問題ありません（root では become は自動的にスキップされます）。
 
 ### Step 4: Playbook の実行
 
@@ -232,6 +239,37 @@ sshpass -p password ssh -o StrictHostKeyChecking=no root@<training> 'cd /opt/air
 
 > bastion と各サーバー間に SSH 鍵を配置していない場合、`sshpass` を使ってパスワード認証で接続します。`setup-controller.sh` で `sshpass` は自動的にインストールされます。
 
+### Step 5.5: 受講者ユーザーの作成
+
+受講者ごとの Linux ユーザーを training サーバーに一括作成します。
+
+```bash
+# trainees.yml に受講者情報を記入
+vi /opt/airgap/trainees.yml
+
+# ユーザー作成を実行
+ansible-playbook -i inventory/hosts.yml playbooks/setup-trainees.yml $SSH_ARGS
+
+# credentials.csv を確認して受講者に配布
+cat credentials.csv
+```
+
+`trainees.yml` の記入例:
+```yaml
+trainees:
+  - username: yamada.taro@example.com
+    display_name: 山田太郎
+  - username: suzuki.hanako@example.com
+  - username: tanaka
+```
+
+- `username` がメールアドレス形式の場合、`@` より前がログインユーザー名になります（例: `yamada.taro`）
+- メールアドレス形式でない場合、そのままユーザー名として使用されます
+- `display_name` は任意です（status 表示やラベルに使用）
+
+Playbook 実行後、`trainees.yml` にパスワードが追記され、`credentials.csv` が生成されます。
+`credentials.csv` を受講者に配布してください。
+
 ### Step 6: Windows クライアントの事前設定
 
 各 Windows クライアント上で以下を実施してください（管理者 or 受講者が実施）。
@@ -262,26 +300,42 @@ code --install-extension "\\<bastion>\share\packages\ms-vscode-remote.remote-ssh
 **PowerShell を開いて以下を実行:**
 
 ```powershell
-# 1. training サーバーに SSH 接続
-ssh root@<training の IP>
+# 1. training サーバーに SSH 接続（credentials.csv に記載のユーザー名・パスワードを使用）
+ssh <username>@<training の IP>
 ```
-パスワード: `password`（デフォルト）
+パスワード: credentials.csv で配布されたパスワード
 
 ```bash
-# 2. 演習環境を構築（IP は SSH 接続元から自動取得されます）
+# 2. 演習環境を構築（ログインユーザーで自動識別されます）
 cd /opt/airgap
 ./deploy-training.sh
 ```
 
 完了すると以下のように表示されます:
 ```
-接続元 IP: 192.168.1.31
+ユーザー: yamada.taro
+受講者名: 山田太郎
+
 ========================================
 演習環境の構築が完了しました！
 
 接続方法:
   ssh -p 2201 root@192.168.1.10
   パスワード: password
+
+コンテナ:
+  user1_controller  Up 10 seconds  0.0.0.0:2201->22/tcp
+  user1_node1       Up 10 seconds
+  user1_node2       Up 10 seconds
+  user1_node3       Up 10 seconds
+  user1_lb          Up 10 seconds
+
+演習用ネットワーク:
+  controller: 172.20.1.10
+  node1:      172.20.1.11
+  node2:      172.20.1.12
+  node3:      172.20.1.13
+  lb:         172.20.1.14
 ========================================
 ```
 
@@ -342,30 +396,39 @@ ansible all -m ping
 
 > `<user_id>` は `deploy-training.sh` の出力で確認できます。例: user_id=1 なら `172.20.1.11`
 
-### 演習環境の削除・再構築
+### 演習環境の管理
 
 ```bash
-# training サーバーに SSH 接続して実行
-ssh root@<training の IP>
+# training サーバーに SSH 接続して実行（受講者ユーザーでログイン）
+ssh <username>@<training の IP>
 cd /opt/airgap
-./destroy-training.sh      # 環境削除
-./deploy-training.sh       # 再構築（同じ user_id で再利用されます）
+
+# 環境の一覧表示
+./deploy-training.sh status
+
+# 自分の環境を削除（ログインユーザーで自動識別）
+./deploy-training.sh destroy
+
+# 再構築（同じ user_id で再利用される）
+./deploy-training.sh
 ```
 
 ---
 
 ## トラブルシューティング
 
-### `deploy-training.sh` で「接続元 IP を特定できません」
+### `deploy-training.sh` で「root ユーザーでのセルフサービスデプロイはできません」
 
-SSH 経由でログインしてから実行してください。コンソールから直接ログインした場合は SSH_CLIENT が設定されないため動作しません。
+受講者ユーザーでログインしてから実行してください。root では演習環境のセルフサービスデプロイはできません。
 
 ```bash
-# 正しい使い方: SSH でログインしてから実行
-ssh root@<training の IP>
+# 正しい使い方: 受講者ユーザーでログインしてから実行
+ssh yamada.taro@<training の IP>
 cd /opt/airgap
 ./deploy-training.sh
 ```
+
+> 管理者がテスト環境を作成する場合は `./deploy-training.sh --test N` を使用してください。
 
 ### SSH ポートに接続できない
 
@@ -394,19 +457,14 @@ dnf repolist
 # airgap-baseos と airgap-appstream が表示されること
 ```
 
-表示されない場合、リポジトリ設定に問題があります。`./destroy-training.sh` → `./deploy-training.sh` で再構築してください。
+表示されない場合、リポジトリ設定に問題があります。`./deploy-training.sh destroy` → `./deploy-training.sh` で再構築してください。
 
 ### 割当状況の確認（管理者）
 
-bastion で:
+training サーバーで:
 ```bash
 cd /opt/airgap
-ansible-playbook -i inventory/hosts.yml playbooks/training-status.yml --limit rhel-target
-```
-
-または training サーバーで直接:
-```bash
-python3 /opt/airgap/scripts/allocate.py --action status | python3 -m json.tool
+./deploy-training.sh status
 ```
 
 ### 全環境の一括リセット（管理者）
@@ -417,3 +475,181 @@ podman stop -a; podman rm -af; podman network prune -f
 rm -f /opt/training/allocations.json
 rm -rf /opt/training/user*
 ```
+
+---
+
+## アップデート手順（既にデプロイ済みの環境）
+
+IP ベースのユーザー識別からユーザーベースの識別にアップグレードする手順です。
+既に稼働中の環境（IP ベースで作成済み）は影響を受けず、新規の払い出しからユーザーベースになります。
+
+### 前提条件
+
+- training サーバーに root で SSH 接続可能
+- bastion（または作業端末）に改修版ファイルがある
+
+### 持ち込むファイル
+
+```
+airgap-update/
+├── deploy-training.sh                          # 改修版
+├── destroy-training.sh                         # 念のため同梱
+├── trainees.yml                                # 受講者リストテンプレート
+├── scripts/
+│   └── allocate.py                             # 改修版
+└── playbooks/
+    ├── setup-trainees.yml                      # 新規: ユーザー一括作成
+    ├── deploy-my-env.yml                       # 改修版
+    ├── destroy-my-env.yml                      # 改修版
+    ├── templates/
+    │   └── trainees-updated.yml.j2             # 新規: YAML 書き戻しテンプレート
+    └── roles/
+        ├── rhel_training/tasks/main.yml        # 改修版
+        └── rhel_training_multi/tasks/main.yml  # 改修版
+```
+
+### Step 1: ファイルを training サーバーに転送
+
+bastion で実行:
+
+```bash
+SSH_OPTS="-o StrictHostKeyChecking=no"
+
+# スクリプト
+scp $SSH_OPTS deploy-training.sh root@<training>:/opt/airgap/
+scp $SSH_OPTS destroy-training.sh root@<training>:/opt/airgap/
+scp $SSH_OPTS scripts/allocate.py root@<training>:/opt/airgap/scripts/
+
+# Playbook・テンプレート
+scp $SSH_OPTS playbooks/setup-trainees.yml root@<training>:/opt/airgap/playbooks/
+scp $SSH_OPTS playbooks/deploy-my-env.yml root@<training>:/opt/airgap/playbooks/
+scp $SSH_OPTS playbooks/destroy-my-env.yml root@<training>:/opt/airgap/playbooks/
+ssh $SSH_OPTS root@<training> 'mkdir -p /opt/airgap/playbooks/templates'
+scp $SSH_OPTS playbooks/templates/trainees-updated.yml.j2 root@<training>:/opt/airgap/playbooks/templates/
+
+# ロール
+scp $SSH_OPTS playbooks/roles/rhel_training/tasks/main.yml root@<training>:/opt/airgap/playbooks/roles/rhel_training/tasks/main.yml
+scp $SSH_OPTS playbooks/roles/rhel_training_multi/tasks/main.yml root@<training>:/opt/airgap/playbooks/roles/rhel_training_multi/tasks/main.yml
+
+# 受講者リストテンプレート
+scp $SSH_OPTS trainees.yml root@<training>:/opt/airgap/
+```
+
+### Step 2: training サーバーで基盤更新
+
+training サーバーに root で SSH 接続して実行:
+
+```bash
+ssh root@<training>
+cd /opt/airgap
+
+# training グループを作成
+groupadd -f training
+
+# allocations.json と .lock のパーミッションを修正
+# （一般ユーザーが status コマンドで読み取れるようにする）
+chmod 644 /opt/training/allocations.json 2>/dev/null || true
+chmod 644 /opt/training/.lock 2>/dev/null || true
+
+# MOTD を配置（受講者ログイン時のガイダンス）
+cat > /etc/motd << 'EOF'
+=== Ansible トレーニング環境 ===
+
+演習環境の操作:
+  cd /opt/airgap
+  ./deploy-training.sh           環境を作成
+  ./deploy-training.sh status    環境の状態を確認
+  ./deploy-training.sh destroy   環境を削除（再作成可能）
+
+問題が発生した場合は管理者にお問い合わせください。
+EOF
+```
+
+### Step 3: 既存環境の互換性を確認
+
+```bash
+# training サーバーで実行
+cd /opt/airgap
+./deploy-training.sh status
+# → 既存の IP ベース環境が USERNAME 列に IP アドレスとして表示されればOK
+```
+
+### Step 4: 受講者ユーザーを作成
+
+```bash
+# training サーバーで trainees.yml を編集
+vi /opt/airgap/trainees.yml
+```
+
+記入例:
+```yaml
+trainees:
+  - username: yamada.taro@example.com
+    display_name: 山田太郎
+  - username: suzuki.hanako@example.com
+    display_name: 鈴木花子
+  - username: tanaka
+```
+
+```bash
+# ユーザー作成 Playbook を実行
+cd /opt/airgap
+ansible-playbook -i inventory/hosts.yml playbooks/setup-trainees.yml --connection local
+```
+
+> `--connection local` を指定すると、training サーバー上でローカル実行されます。
+
+### Step 5: credentials.csv を確認して配布
+
+```bash
+# training サーバーで確認
+cat /opt/airgap/credentials.csv
+
+# bastion に取得する場合:
+# bastion$ scp root@<training>:/opt/airgap/credentials.csv .
+```
+
+出力例:
+```
+username,password,display_name
+yamada.taro,xK9mP2qR,山田太郎
+suzuki.hanako,bN4wL7vT,鈴木花子
+tanaka,mQ8jR3wZ,
+```
+
+受講者に以下を伝えてください:
+- training サーバーの IP アドレス
+- ログインユーザー名（credentials.csv の username 列）
+- ログインパスワード（credentials.csv の password 列）
+
+### Step 6: 動作確認
+
+```bash
+# 受講者ユーザーでログインできるか確認
+ssh yamada.taro@<training>
+# → MOTD が表示され、パスワードでログインできること
+
+# 演習環境を作成
+cd /opt/airgap
+./deploy-training.sh
+# → 「ユーザー: yamada.taro」と表示され、環境が構築されること
+
+# status で確認
+./deploy-training.sh status
+# → USERNAME 列にユーザー名が表示されること
+
+# 演習環境に接続
+ssh -p <ポート番号> root@<training>
+# → ansible --version が動作すること
+
+# クリーンアップ（確認完了後）
+cd /opt/airgap
+./deploy-training.sh destroy
+```
+
+### 注意事項
+
+- **既存環境との互換性**: IP ベースで作成済みの環境はそのまま稼働し続けます。status コマンドでは USERNAME 列に IP アドレスが表示されます
+- **allocate.py のロック**: 書き込み操作（allocate/release/activate）は root で排他ロック、読み取り操作（status/lookup）は一般ユーザーで共有ロックを使用します
+- **冪等性**: setup-trainees.yml は複数回実行しても安全です。既存ユーザーはスキップされ、パスワードが trainees.yml に記録済みの場合は再生成されません
+- **受講者の追加**: trainees.yml にエントリを追加して setup-trainees.yml を再実行すれば、新しいユーザーだけが追加されます
