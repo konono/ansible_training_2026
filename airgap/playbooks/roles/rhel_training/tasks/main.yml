@@ -3,7 +3,7 @@
   ansible.builtin.group:
     name: training
     state: present
-  tags: training-group
+  tags: [training-group, sync-code]
 
 - name: airgap コード配置ディレクトリを作成
   ansible.builtin.file:
@@ -13,12 +13,14 @@
   loop:
     - /opt/airgap
     - /opt/airgap/scripts
+  tags: sync-code
 
 - name: 採番スクリプトを配置
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../scripts/allocate.py"
     dest: /opt/airgap/scripts/allocate.py
     mode: '0755'
+  tags: sync-code
 
 - name: デプロイスクリプトを配置
   ansible.builtin.copy:
@@ -28,30 +30,35 @@
   loop:
     - { src: "{{ playbook_dir }}/../deploy-training.sh", dest: "deploy-training.sh" }
     - { src: "{{ playbook_dir }}/../destroy-training.sh", dest: "destroy-training.sh" }
+  tags: sync-code
 
 - name: Playbook・ロール・設定を配置
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/"
     dest: /opt/airgap/playbooks/
     mode: preserve
+  tags: sync-code
 
 - name: インベントリを配置
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../inventory/"
     dest: /opt/airgap/inventory/
     mode: preserve
+  tags: sync-code
 
 - name: group_vars を配置
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../group_vars/"
     dest: /opt/airgap/group_vars/
     mode: preserve
+  tags: sync-code
 
 - name: ansible.cfg を配置
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../ansible.cfg"
     dest: /opt/airgap/ansible.cfg
     mode: '0644'
+  tags: sync-code
 
 - name: Python バージョンを確認
   ansible.builtin.command: python3 --version
@@ -153,7 +160,7 @@
     path: /opt/training
     state: directory
     mode: '0755'
-  tags: training-group
+  tags: [training-group, sync-code]
 
 - name: allocations.json のパーミッションを設定（存在する場合）
   ansible.builtin.file:
@@ -161,7 +168,7 @@
     mode: '0644'
   failed_when: false
   changed_when: false
-  tags: training-group
+  tags: [training-group, sync-code]
 
 - name: MOTD を配置
   ansible.builtin.copy:
@@ -177,7 +184,7 @@
         ./deploy-training.sh destroy   環境を削除（再作成可能）
 
       問題が発生した場合は管理者にお問い合わせください。
-  tags: training-group
+  tags: [training-group, sync-code]
 
 - name: セットアップ完了
   ansible.builtin.debug:
