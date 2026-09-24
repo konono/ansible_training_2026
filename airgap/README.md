@@ -38,19 +38,95 @@
 
 ## クイックスタート
 
+### 1. バンドル作成（オンライン環境）
+
 ```bash
-# 1. オンライン環境でバンドルを作成
 cd airgap/
 ./prepare-offline-bundle.sh
-
-# 2. DVD ISO を offline-resources/iso/ に配置
-#    → 詳細は docs/bundle-preparation.md
-
-# 3. airgap/ ディレクトリ全体を USB 等で持ち込み
-
-# 4. オフライン環境でデプロイ
-#    → 詳細は docs/deployment-guide.md
+# DVD ISO を offline-resources/iso/ に配置（詳細は docs/bundle-preparation.md）
 ```
+
+### 2. 基盤構築（オフライン環境 — bastion で実行）
+
+```bash
+# 資材を bastion に配置後:
+cd /opt/airgap
+./setup-controller.sh                  # ansible-core, sshpass, コレクションをインストール
+vi inventory/hosts.yml                 # IP アドレス・ユーザー・パスワードを編集
+
+SSH_ARGS='-e ansible_ssh_common_args="-o StrictHostKeyChecking=no"'
+ansible-playbook -i inventory/hosts.yml playbooks/distribute-resources.yml $SSH_ARGS
+ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml $SSH_ARGS
+ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml $SSH_ARGS
+```
+
+### 3. 構築後の検証
+
+基盤構築が正しく完了しているか、テスト環境を1つ作って確認します。
+
+```bash
+# training サーバーでテスト環境を作成
+ssh <user>@<training の IP>
+cd /opt/airgap
+./deploy-training.sh --test 1
+
+# テスト環境に SSH 接続して動作確認
+ssh -p 2201 root@<training の IP>   # パスワード: password
+ansible --version                    # ansible が使えること
+dnf install -y nginx                 # パッケージがインストールできること（→ "Complete!"）
+exit
+
+# テスト環境を削除
+cd /opt/airgap
+./destroy-training.sh --test
+```
+
+### 3.5. 受講者ユーザーの作成
+
+受講者リストを作成し、training サーバーにログインユーザーを一括作成します。
+
+```bash
+# bastion で実行
+vi trainees.yml                    # 受講者の username を記入
+ansible-playbook -i inventory/hosts.yml playbooks/setup-trainees.yml $SSH_ARGS
+
+# パスワードが自動生成され、credentials.csv に出力される
+cat credentials.csv                # 受講者に配布
+```
+
+### 4. 受講者の環境払い出し
+
+受講者が training サーバーに自分のユーザーで SSH ログインし、環境を作成します。
+
+```bash
+# 受講者が実行（ログインユーザーで自動識別される）
+ssh <username>@<training の IP>
+cd /opt/airgap
+./deploy-training.sh
+
+# 完了すると接続情報が表示される:
+#   ssh -p 2201 root@<training の IP>
+#   パスワード: password
+```
+
+受講者は表示されたポート番号で controller コンテナに接続し、演習を開始します。
+
+```bash
+# 環境の一覧表示（管理者）
+./deploy-training.sh status
+
+# 環境の削除（受講者が自分で実行）
+./deploy-training.sh destroy
+
+# 管理者が特定の環境を削除
+./deploy-training.sh destroy --user 3
+./deploy-training.sh destroy --username tanaka
+
+# 再構築（同じ user_id が再利用される）
+./deploy-training.sh
+```
+
+> 詳細は [構築ガイド](docs/deployment-guide.md) を参照してください。
 
 ## ディレクトリ構成
 
@@ -61,8 +137,9 @@ airgap/
 ├── prepare-offline-bundle.sh          バンドル作成スクリプト
 ├── setup-controller.sh                bastion セットアップ
 ├── transfer-to-bastion.sh             資材転送ワンコマンド
-├── deploy-training.sh                 受講者向け環境デプロイ
-├── destroy-training.sh                環境削除
+├── deploy-training.sh                 環境の作成・一覧・削除
+├── destroy-training.sh                環境削除（deploy-training.sh destroy のラッパー）
+├── trainees.yml                       受講者リスト（setup-trainees.yml の入力）
 ├── ansible.cfg                        Ansible 設定
 ├── inventory/                         インベントリテンプレート
 │   ├── hosts.yml                      統合インベントリ
@@ -80,6 +157,7 @@ airgap/
 │   ├── repo-server-setup.yml          リポジトリサーバー構築
 │   ├── rhel-setup.yml                 Linux 演習サーバー構築
 │   ├── windows-client-setup.yml       Windows クライアント設定
+│   ├── setup-trainees.yml              受講者ユーザー一括作成
 │   ├── deploy-my-env.yml              セルフサービスデプロイ
 │   ├── destroy-my-env.yml             環境削除
 │   ├── training-status.yml            割当状況確認
@@ -119,3 +197,18 @@ airgap/
 | ... | ... | ... | ... |
 
 受講者は `ssh -p 220X root@<training IP>`（パスワード: `password`）で接続します。
+
+### スクリプト一覧
+
+| コマンド | 実行者 | 用途 |
+|---|---|---|
+| `setup-controller.sh` | 管理者 | bastion に ansible-core 等をインストール |
+| `ansible-playbook playbooks/setup-trainees.yml` | 管理者 | 受講者ユーザーを一括作成 |
+| `deploy-training.sh` | 受講者 | 自分の演習環境を作成（ログインユーザーで識別） |
+| `deploy-training.sh --label 山田太郎` | 受講者 | 受講者名を指定して作成 |
+| `deploy-training.sh status` | 誰でも | 全環境の一覧表示 |
+| `deploy-training.sh destroy` | 受講者 | 自分の環境を削除（ログインユーザーで識別） |
+| `deploy-training.sh destroy --user 3` | 管理者 | user_id 指定で削除 |
+| `deploy-training.sh destroy --username tanaka` | 管理者 | ユーザー名指定で削除 |
+| `deploy-training.sh --test N` | 管理者 | テスト環境を N 人分作成 |
+| `deploy-training.sh destroy --test` | 管理者 | テスト環境を全て削除 |

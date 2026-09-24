@@ -23,5 +23,4 @@ ubi10_repo_enabled: true
 packages_dir: /opt/packages
 
 # Firewall configuration
-firewall_cmd_path: /usr/bin/firewall-cmd
 firewall_service_name: http

@@ -3,6 +3,9 @@
 演習環境の user_id 採番・管理スクリプト
 
 Usage:
+  allocate.py --username <user> --action allocate [--hostname <name>] [--client-ip <IP>]
+  allocate.py --username <user> --action lookup
+  allocate.py --username <user> --action release
   allocate.py --client-ip <IP> --action allocate [--hostname <name>]
   allocate.py --client-ip <IP> --action lookup
   allocate.py --client-ip <IP> --action release
@@ -49,16 +52,18 @@ def save_allocations(data):
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+        os.chmod(tmp, 0o644)
         os.replace(tmp, ALLOCATIONS_FILE)
     except BaseException:
         os.unlink(tmp)
         raise
 
 
-def build_entry(user_id, client_ip, hostname, status="allocated"):
-    return {
+def build_entry(user_id, client_ip, hostname, username=None, status="allocated"):
+    entry = {
         "user_id": user_id,
-        "client_ip": client_ip,
+        "username": username or "",
+        "client_ip": client_ip or "",
         "client_hostname": hostname,
         "allocated_at": datetime.now().isoformat(timespec="seconds"),
         "ssh_port": 2200 + user_id,
@@ -74,16 +79,31 @@ def build_entry(user_id, client_ip, hostname, status="allocated"):
         "training_dir": f"/opt/training/user{user_id}",
         "status": status,
     }
+    return entry
 
 
-def allocate(client_ip, hostname):
+def _find_active_entry(data, username=None, client_ip=None):
+    """username または client_ip でアクティブなエントリを検索"""
+    for entry in data["allocations"]:
+        if entry["status"] == "released":
+            continue
+        if username and entry.get("username") == username:
+            return entry
+        if client_ip and entry.get("client_ip") == client_ip:
+            return entry
+    return None
+
+
+def allocate(username=None, client_ip=None, hostname="unknown"):
     data = load_allocations()
 
-    for entry in data["allocations"]:
-        if entry["client_ip"] == client_ip and entry["status"] != "released":
-            entry_json = json.dumps(entry, ensure_ascii=False)
-            print(entry_json)
-            return
+    existing = _find_active_entry(data, username=username, client_ip=client_ip)
+    if existing:
+        if username and not existing.get("username"):
+            existing["username"] = username
+            save_allocations(data)
+        print(json.dumps(existing, ensure_ascii=False))
+        return
 
     released = sorted(
         [e for e in data["allocations"] if e["status"] == "released"],
@@ -110,7 +130,7 @@ def allocate(client_ip, hostname):
         )
         sys.exit(1)
 
-    entry = build_entry(user_id, client_ip, hostname)
+    entry = build_entry(user_id, client_ip, hostname, username=username)
     data["allocations"].append(entry)
     data["allocations"].sort(key=lambda e: e["user_id"])
     save_allocations(data)
@@ -118,37 +138,39 @@ def allocate(client_ip, hostname):
     print(json.dumps(entry, ensure_ascii=False))
 
 
-def lookup(client_ip):
+def lookup(username=None, client_ip=None):
     data = load_allocations()
-    for entry in data["allocations"]:
-        if entry["client_ip"] == client_ip and entry["status"] != "released":
-            print(json.dumps(entry, ensure_ascii=False))
-            return
+    entry = _find_active_entry(data, username=username, client_ip=client_ip)
+    if entry:
+        print(json.dumps(entry, ensure_ascii=False))
+        return
     print('{"error": "not found"}', file=sys.stderr)
     sys.exit(1)
 
 
-def activate(client_ip):
+def activate(username=None, client_ip=None):
     data = load_allocations()
-    for entry in data["allocations"]:
-        if entry["client_ip"] == client_ip and entry["status"] != "released":
-            entry["status"] = "active"
-            entry["activated_at"] = datetime.now().isoformat(timespec="seconds")
-            save_allocations(data)
-            print(json.dumps(entry, ensure_ascii=False))
-            return
+    entry = _find_active_entry(data, username=username, client_ip=client_ip)
+    if entry:
+        entry["status"] = "active"
+        entry["activated_at"] = datetime.now().isoformat(timespec="seconds")
+        save_allocations(data)
+        print(json.dumps(entry, ensure_ascii=False))
+        return
     print('{"error": "not found"}', file=sys.stderr)
     sys.exit(1)
 
 
-def release(client_ip=None, user_id=None):
+def release(username=None, client_ip=None, user_id=None):
     data = load_allocations()
     for entry in data["allocations"]:
         if entry["status"] == "released":
             continue
-        ip_ok = client_ip is None or entry["client_ip"] == client_ip
+        username_ok = username is None or entry.get("username") == username
+        ip_ok = client_ip is None or entry.get("client_ip") == client_ip
         id_ok = user_id is None or entry["user_id"] == user_id
-        if ip_ok and id_ok and (client_ip is not None or user_id is not None):
+        has_key = username is not None or client_ip is not None or user_id is not None
+        if username_ok and ip_ok and id_ok and has_key:
             entry["status"] = "released"
             entry["released_at"] = datetime.now().isoformat(timespec="seconds")
             save_allocations(data)
@@ -192,7 +214,13 @@ def with_lock(func, *args, **kwargs):
 
 def with_shared_lock(func, *args, **kwargs):
     os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
-    with open(LOCK_FILE, "w") as lf:
+    try:
+        lf = open(LOCK_FILE, "r")
+    except FileNotFoundError:
+        return func(*args, **kwargs)
+    except PermissionError:
+        return func(*args, **kwargs)
+    with lf:
         _acquire_lock(lf, fcntl.LOCK_SH)
         return func(*args, **kwargs)
 
@@ -200,6 +228,7 @@ def with_shared_lock(func, *args, **kwargs):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--client-ip", default=None)
+    parser.add_argument("--username", default=None)
     parser.add_argument("--hostname", default="unknown")
     parser.add_argument("--user-id", type=int, default=None)
     parser.add_argument(
@@ -209,28 +238,32 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.action == "allocate":
-        if not args.client_ip:
-            print("--client-ip required for allocate", file=sys.stderr)
-            sys.exit(1)
-        with_lock(allocate, args.client_ip, args.hostname)
-    elif args.action == "lookup":
-        if not args.client_ip:
-            print("--client-ip required for lookup", file=sys.stderr)
-            sys.exit(1)
-        with_shared_lock(lookup, args.client_ip)
-    elif args.action == "activate":
-        if not args.client_ip:
-            print("--client-ip required for activate", file=sys.stderr)
-            sys.exit(1)
-        with_lock(activate, args.client_ip)
-    elif args.action == "release":
-        if not args.client_ip and not args.user_id:
-            print("--client-ip or --user-id required", file=sys.stderr)
-            sys.exit(1)
-        with_lock(release, args.client_ip, args.user_id)
-    elif args.action == "status":
+    if args.action == "status":
         with_shared_lock(status)
+        return
+
+    if args.action == "release" and args.user_id:
+        with_lock(release, user_id=args.user_id)
+        return
+
+    if not args.username and not args.client_ip:
+        if args.action == "release" and args.user_id:
+            pass
+        else:
+            print("--username or --client-ip required", file=sys.stderr)
+            sys.exit(1)
+
+    if args.action == "allocate":
+        with_lock(allocate, username=args.username, client_ip=args.client_ip,
+                  hostname=args.hostname)
+    elif args.action == "lookup":
+        with_shared_lock(lookup, username=args.username,
+                         client_ip=args.client_ip)
+    elif args.action == "activate":
+        with_lock(activate, username=args.username, client_ip=args.client_ip)
+    elif args.action == "release":
+        with_lock(release, username=args.username, client_ip=args.client_ip,
+                  user_id=args.user_id)
 
 
 if __name__ == "__main__":

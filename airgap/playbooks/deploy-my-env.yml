@@ -8,32 +8,25 @@
     - ../group_vars/all.yml
 
   pre_tasks:
-    - name: client_ip が指定されていることを確認
+    - name: training_username または client_ip が指定されていることを確認
       ansible.builtin.assert:
         that:
-          - client_ip is defined
-          - client_ip | length > 0
+          - (training_username is defined and training_username | length > 0)
+            or (client_ip is defined and client_ip | length > 0)
         fail_msg: >
-          client_ip が未指定です。deploy-training.sh 経由で実行してください。
-
-    - name: SSH_CLIENT が設定されているか、テストモードであることを確認
-      ansible.builtin.assert:
-        that:
-          - (lookup('env', 'SSH_CLIENT') | length > 0)
-            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
-        fail_msg: >
-          SSH_CLIENT が未設定です。SSH 経由でログインしてから
-          deploy-training.sh を実行してください。
-
-    - name: client_ip が SSH 接続元またはテスト用 IP であることを確認
-      ansible.builtin.assert:
-        that:
-          - client_ip == (lookup('env', 'SSH_CLIENT') | split(' ') | first)
-            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
-        fail_msg: >
-          client_ip ({{ client_ip }}) が SSH 接続元と一致しません。
+          training_username または client_ip が未指定です。
           deploy-training.sh 経由で実行してください。
-      when: lookup('env', 'SSH_CLIENT') | length > 0
+
+    - name: テストモードの client_ip バリデーション
+      ansible.builtin.assert:
+        that:
+          - (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1'
+        fail_msg: >
+          テスト用 IP (198.51.100.*) はテストモード (--test) でのみ使用可能です。
+      when:
+        - client_ip is defined
+        - client_ip is match('^198\\.51\\.100\\.')
+        - training_username is not defined or training_username | length == 0
 
     - name: repo_server_ip が設定されていることを確認
       ansible.builtin.assert:

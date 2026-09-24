@@ -8,15 +8,15 @@
 Windows クライアント                    Linux サーバー (192.168.100.10)
 ┌──────────────┐                       ┌──────────────────────────────────────┐
 │ 受講者A      │ ssh -p 2201 ─────────>│  user1 環境 (172.20.1.0/24)         │
-│ 192.168.100.31│                      │    controller (.10) :2201            │
+│ yamada.taro  │                       │    controller (.10) :2201            │
 └──────────────┘                       │    node1-3 (.11-.13), lb (.14)       │
 ┌──────────────┐                       │                                      │
 │ 受講者B      │ ssh -p 2202 ─────────>│  user2 環境 (172.20.2.0/24)         │
-│ 192.168.100.32│                      │    controller (.10) :2202            │
+│ suzuki.hanako│                       │    controller (.10) :2202            │
 └──────────────┘                       │    node1-3 (.11-.13), lb (.14)       │
 ┌──────────────┐                       │                                      │
 │ 受講者C      │ ssh -p 2203 ─────────>│  user3 環境 (172.20.3.0/24)         │
-│ 192.168.100.33│                      │    controller (.10) :2203            │
+│ tanaka       │                       │    controller (.10) :2203            │
 └──────────────┘                       └──────────────────────────────────────┘
 ```
 
@@ -53,20 +53,21 @@ Windows クライアント                    Linux サーバー (192.168.100.10
 ### 環境の構築
 
 ```powershell
-# 1. training サーバーに SSH 接続
-ssh root@<training の IP>
+# 1. training サーバーに SSH 接続（credentials.csv で配布されたユーザー名・パスワードを使用）
+ssh <username>@<training の IP>
 ```
-パスワード: `password`（デフォルト）
 
 ```bash
-# 2. 演習環境を構築（IP は SSH 接続元から自動取得されます）
+# 2. 演習環境を構築（ログインユーザーで自動識別されます）
 cd /opt/airgap
 ./deploy-training.sh
 ```
 
 出力例:
 ```
-接続元 IP: 192.168.100.31
+ユーザー: yamada.taro
+受講者名: 山田太郎
+
 ========================================
 演習環境の構築が完了しました！
 
@@ -76,10 +77,17 @@ cd /opt/airgap
 
 コンテナ:
   user1_controller  Up 10 seconds  0.0.0.0:2201->22/tcp
-  user1_node1       Up 10 seconds  22/tcp
-  user1_node2       Up 10 seconds  22/tcp
-  user1_node3       Up 10 seconds  22/tcp
-  user1_lb          Up 10 seconds  22/tcp
+  user1_node1       Up 10 seconds
+  user1_node2       Up 10 seconds
+  user1_node3       Up 10 seconds
+  user1_lb          Up 10 seconds
+
+演習用ネットワーク:
+  controller: 172.20.1.10
+  node1:      172.20.1.11
+  node2:      172.20.1.12
+  node3:      172.20.1.13
+  lb:         172.20.1.14
 ========================================
 ```
 
@@ -101,7 +109,7 @@ ssh -o StrictHostKeyChecking=no -p <表示されたポート番号> root@<traini
 
 ```bash
 # training サーバーに SSH 接続して実行
-ssh root@<training の IP>
+ssh <username>@<training の IP>
 cd /opt/airgap
 ./destroy-training.sh      # 環境削除
 ./deploy-training.sh       # 再構築（同じ user_id で再利用されます）
@@ -124,10 +132,10 @@ python3 /opt/airgap/scripts/allocate.py --action status | python3 -m json.tool
 
 出力例:
 ```
-user1 | ACTIVE    | 192.168.100.31 (WIN-PC01) | port 2201 | 172.20.1.0/24
-user2 | ACTIVE    | 192.168.100.32 (WIN-PC02) | port 2202 | 172.20.2.0/24
-user3 | ALLOCATED | 192.168.100.33 (WIN-PC03) | port 2203 | 172.20.3.0/24
-user4 | RELEASED  | 192.168.100.34 (WIN-PC04) | port 2204 | 172.20.4.0/24
+user1 | ACTIVE    | yamada.taro    (山田太郎) | port 2201 | 172.20.1.0/24
+user2 | ACTIVE    | suzuki.hanako  (鈴木花子) | port 2202 | 172.20.2.0/24
+user3 | ALLOCATED | tanaka         (-)        | port 2203 | 172.20.3.0/24
+user4 | RELEASED  | test-user      (-)        | port 2204 | 172.20.4.0/24
 ---
 合計: 4 件 (active: 2, allocated: 1, released: 1)
 ```
@@ -153,11 +161,12 @@ rm -rf /opt/training/user*
 
 `/opt/airgap/scripts/allocate.py` が内蔵の排他制御（`fcntl.flock`）で安全に user_id を採番します。
 
-- 同じ IP から再実行 → 同じ user_id を返す（冪等性）
+- 同じユーザーから再実行 → 同じ user_id を返す（冪等性）
 - `released` ステータスの ID → 次の採番で再利用（最小 ID 優先）
 - スクリプト内蔵の `fcntl.flock` で排他制御（外部ラッパー不要）
 - Python 標準ライブラリのみ、追加パッケージ不要
 - user_id の上限は 99（ポート 2201〜2299）
+- ユーザー識別はログイン Linux ユーザー名ベース（IP アドレスは参考情報として保持）
 
 ### リソース共有
 

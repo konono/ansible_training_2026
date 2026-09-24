@@ -1,9 +1,18 @@
 ---
 # --- 採番 ---
+- name: 採番パラメータを決定
+  ansible.builtin.set_fact:
+    allocate_key_args: >-
+      {% if training_username is defined and training_username | length > 0 %}
+      --username "{{ training_username }}"
+      {% elif client_ip is defined and client_ip | length > 0 %}
+      --client-ip "{{ client_ip }}"
+      {% endif %}
+
 - name: user_id を採番
   ansible.builtin.command: >
     python3 {{ allocate_script }}
-    --client-ip "{{ client_ip }}"
+    {{ allocate_key_args }}
     --hostname "{{ client_hostname | default('unknown') }}"
     --action allocate
   register: allocation_result
@@ -18,7 +27,7 @@
 
 - name: 割当情報を表示
   ansible.builtin.debug:
-    msg: "user_id={{ alloc.user_id }}, port={{ alloc.ssh_port }}, subnet={{ alloc.subnet }}"
+    msg: "user_id={{ alloc.user_id }}, port={{ alloc.ssh_port }}, subnet={{ alloc.subnet }}, username={{ alloc.username | default('-') }}"
 
 - name: 変数を設定
   ansible.builtin.set_fact:
@@ -140,7 +149,7 @@
 - name: allocations を active に更新
   ansible.builtin.command: >
     python3 {{ allocate_script }}
-    --client-ip "{{ client_ip }}"
+    {{ allocate_key_args }}
     --action activate
   changed_when: true
 
@@ -162,6 +171,13 @@
 
       コンテナ:
       {{ container_status.stdout }}
+
+      演習用ネットワーク:
+        controller: 172.20.{{ user_id }}.10
+        node1:      172.20.{{ user_id }}.11
+        node2:      172.20.{{ user_id }}.12
+        node3:      172.20.{{ user_id }}.13
+        lb:         172.20.{{ user_id }}.14
 
       SSH config に以下を追加すると便利です:
         Host training

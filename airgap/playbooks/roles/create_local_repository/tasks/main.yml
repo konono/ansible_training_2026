@@ -37,23 +37,25 @@
     enabled: "{{ nginx_service_enabled }}"
   become: true
 
-- name: Check if firewall-cmd exists
-  ansible.builtin.stat:
-    path: "{{ firewall_cmd_path }}"
-  register: firewall_cmd
+- name: Check if firewalld is active
+  ansible.builtin.command:
+    cmd: systemctl is-active firewalld
+  register: firewalld_active
+  changed_when: false
+  failed_when: false
   become: true
 
-- name: Open HTTP service in firewall (permanent) if firewalld present
+- name: Open HTTP service in firewall (permanent)
   ansible.builtin.command:
     cmd: "firewall-cmd --permanent --add-service={{ firewall_service_name }}"
-  when: firewall_cmd.stat.exists
+  when: firewalld_active.rc == 0
   register: firewall_open_http
   changed_when: firewall_open_http.rc == 0
   become: true
 
-- name: Reload firewall if firewalld present
+- name: Reload firewall
   ansible.builtin.command:
     cmd: firewall-cmd --reload
-  when: firewall_cmd.stat.exists
+  when: firewalld_active.rc == 0
   changed_when: true
   become: true
