@@ -34,6 +34,7 @@
 |---|---|---|
 | [バンドル作成ガイド](docs/bundle-preparation.md) | エンジニア | オンライン環境でバンドルを作成する手順 |
 | [構築ガイド](docs/deployment-guide.md) | エンジニア | オフライン環境にトレーニング環境を構築する手順 |
+| [アップグレードガイド](docs/upgrade-guide.md) | エンジニア | デプロイ済み環境の資材更新手順 |
 | [開発者ガイド](docs/development-guide.md) | 開発者 | テスト環境構築・アーキテクチャ・改修方法 |
 
 ## クイックスタート
@@ -136,7 +137,8 @@ airgap/
 ├── Makefile                           開発用 VM 管理コマンド
 ├── prepare-offline-bundle.sh          バンドル作成スクリプト
 ├── setup-controller.sh                bastion セットアップ
-├── transfer-to-bastion.sh             資材転送ワンコマンド
+├── transfer-to-bastion.sh             資材転送ワンコマンド（初回デプロイ）
+├── update-airgap.sh                   デプロイ済み環境の資材更新
 ├── deploy-training.sh                 環境の作成・一覧・削除
 ├── destroy-training.sh                環境削除（deploy-training.sh destroy のラッパー）
 ├── trainees.yml                       受講者リスト（setup-trainees.yml の入力）
