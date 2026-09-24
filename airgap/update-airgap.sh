@@ -91,6 +91,8 @@ tar czf "$ARCHIVE" \
     --exclude='airgap/kvm/vms/*.qcow2' \
     --exclude='airgap/kvm/vms/win11' \
     --exclude='airgap/.tracecraft' \
+    --exclude='airgap/inventory' \
+    --exclude='airgap/credentials.csv' \
     airgap/
 
 SIZE=$(du -sh "$ARCHIVE" | awk '{print $1}')
@@ -128,13 +130,14 @@ run_cmd "
     # offline-resources を退避するシンボリックリンク等は不要
     # tar は offline-resources を含んでいないので上書きされない
 
-    # 既存の Ansible ファイルを削除（offline-resources, .backup*, /opt/training は保持）
+    # 既存の Ansible ファイルを削除（環境固有ファイル, offline-resources, .backup* は保持）
     find ${DEST_DIR} -maxdepth 1 \
         -not -name 'airgap' \
         -not -name '$(basename "$DEST_DIR")' \
         -not -name 'offline-resources' \
-        -not -name '.backup_*' \
+        -not -name 'inventory' \
         -not -name 'credentials.csv' \
+        -not -name '.backup_*' \
         -mindepth 1 \
         -exec rm -rf {} + 2>/dev/null || true
 
@@ -147,34 +150,25 @@ rm -f "$ARCHIVE"
 log_info "展開完了"
 echo ""
 
-# --- Step 5: inventory のカスタマイズ復元 ---
-log_info "Step 5: inventory のカスタマイズを確認"
+# --- Step 5: 環境固有ファイルの保持を確認 ---
+log_info "Step 5: 環境固有ファイルの保持を確認"
 
-# inventory/hosts.yml は環境固有の IP が入っているので、バックアップから復元するか確認
-INVENTORY_CHANGED=$(run_cmd "
-    if [[ -f ${BACKUP_DIR}/inventory/hosts.yml ]]; then
-        if ! diff -q ${BACKUP_DIR}/inventory/hosts.yml ${DEST_DIR}/inventory/hosts.yml >/dev/null 2>&1; then
-            echo 'changed'
-        else
-            echo 'same'
+# inventory/, credentials.csv はアーカイブに含めていないため上書きされない
+# trainees.yml は既存データがあればバックアップから復元、なければテンプレートを配置
+run_cmd "
+    for f in inventory/hosts.yml credentials.csv; do
+        if [[ -f ${DEST_DIR}/\$f ]]; then
+            echo \"  保持: \$f（上書き対象外）\"
         fi
-    else
-        echo 'no_backup'
-    fi
-")
+    done
+"
 
-if [[ "$INVENTORY_CHANGED" == "changed" ]]; then
-    log_warn "inventory/hosts.yml がアップデートで変更されました"
-    log_warn "環境固有の設定はバックアップから復元してください:"
-    log_warn "  cp ${BACKUP_DIR}/inventory/hosts.yml ${DEST_DIR}/inventory/hosts.yml"
-    log_warn "  または差分を確認: diff ${BACKUP_DIR}/inventory/hosts.yml ${DEST_DIR}/inventory/hosts.yml"
-fi
-
-# trainees.yml は既存データを保持
 TRAINEES_EXISTS=$(run_cmd "test -f ${BACKUP_DIR}/trainees.yml && echo yes || echo no")
 if [[ "$TRAINEES_EXISTS" == "yes" ]]; then
     run_cmd "cp -a ${BACKUP_DIR}/trainees.yml ${DEST_DIR}/trainees.yml"
     log_info "trainees.yml をバックアップから復元しました（受講者データ保持）"
+else
+    log_info "trainees.yml は新規テンプレートを配置しました"
 fi
 
 # rhel-version.conf は環境固有なのでバックアップを優先
@@ -293,10 +287,8 @@ if [[ "$SYNC_TRAINING" == "ready" ]]; then
 
     SYNC_RESULT=$(run_cmd "
         cd ${DEST_DIR}
-        SSH_ARGS='-e ansible_ssh_common_args=\"-o StrictHostKeyChecking=no\"'
         ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml \
             --tags sync-code \
-            -e ansible_ssh_common_args='-o StrictHostKeyChecking=no' \
             2>&1
         echo \"EXIT_CODE=\$?\"
     ")
@@ -342,10 +334,5 @@ echo "============================================"
 echo "  アップデート完了"
 echo "============================================"
 echo ""
-if [[ "$INVENTORY_CHANGED" == "changed" ]]; then
-    echo "!! inventory/hosts.yml の差分を確認してください:"
-    echo "   diff ${BACKUP_DIR}/inventory/hosts.yml ${DEST_DIR}/inventory/hosts.yml"
-    echo ""
-fi
 echo "ロールバック（問題があった場合）:"
 echo "  cp -a ${BACKUP_DIR}/* ${DEST_DIR}/"

@@ -27,8 +27,8 @@
 | ansible.cfg | o | |
 | docs/ | o | |
 | group_vars/ | o | |
-| inventory/hosts.yml | △ | 環境固有の IP はバックアップから復元を案内 |
-| trainees.yml | x | バックアップから自動復元（受講者データ保持） |
+| inventory/hosts.yml | x | 環境固有の IP・パスワードを含むため上書きしない |
+| trainees.yml | x | 受講者データを含むため上書きしない |
 | rhel-version.conf | x | バックアップから自動復元 |
 | credentials.csv | x | 保持 |
 | allocations.json | x | 保持（/opt/training/ 配下） |
@@ -81,12 +81,11 @@ cd /tmp/airgap-update/airgap
 
 1. `/opt/airgap/` の存在を確認（なければ初回デプロイを案内）
 2. 現行の設定ファイルをバックアップ (`/opt/airgap/.backup_<timestamp>/`)
-3. 新しいファイルを展開して置き換え
-4. `trainees.yml`, `rhel-version.conf` をバックアップから自動復元
-5. `inventory/hosts.yml` が変わった場合は差分確認を案内
-6. パーミッションを修正
-7. 必須ファイルの存在を検証
-8. **training サーバーへ `--tags sync-code` で自動同期**
+3. 新しいファイルを展開して置き換え（`inventory/`, `trainees.yml`, `credentials.csv` は上書きしない）
+4. `rhel-version.conf` をバックアップから復元
+5. パーミッションを修正
+6. 必須ファイルの存在を検証
+7. **training サーバーへ `--tags sync-code` で自動同期**
 
 ### 実行例
 
@@ -109,8 +108,9 @@ cd /tmp/airgap-update/airgap
 [INFO] Step 4: 転送と展開
 [INFO] 展開完了
 
-[INFO] Step 5: inventory のカスタマイズを確認
-[INFO] trainees.yml をバックアップから復元しました（受講者データ保持）
+[INFO] Step 5: 環境固有ファイルの保持を確認
+  保持: inventory/hosts.yml
+  保持: trainees.yml
 [INFO] rhel-version.conf をバックアップから復元しました
 
 [INFO] Step 6: パーミッション修正
