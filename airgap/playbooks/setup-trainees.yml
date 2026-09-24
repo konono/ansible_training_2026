@@ -1,0 +1,169 @@
+---
+- name: 受講者ユーザーの一括作成
+  hosts: rhel
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../trainees.yml
+
+  vars:
+    training_group: training
+    credentials_file: "{{ playbook_dir }}/../credentials.csv"
+    trainees_file: "{{ playbook_dir }}/../trainees.yml"
+
+  pre_tasks:
+    - name: trainees リストが空でないことを確認
+      ansible.builtin.assert:
+        that:
+          - trainees is defined
+          - trainees | length > 0
+        fail_msg: >
+          trainees.yml にエントリがありません。
+          受講者情報を記入してから実行してください。
+
+    - name: training グループを作成
+      ansible.builtin.group:
+        name: "{{ training_group }}"
+        state: present
+
+  tasks:
+    - name: ユーザー名を解決（メールアドレスのローカルパート抽出）
+      ansible.builtin.set_fact:
+        resolved_trainees: >-
+          {{
+            resolved_trainees | default([]) + [{
+              'original_username': item.username,
+              'linux_user': item.linux_user | default(
+                (item.username | regex_replace('@.*$', '')) if '@' in item.username
+                else item.username
+              ),
+              'display_name': item.display_name | default(''),
+              'password': item.password | default('')
+            }]
+          }}
+      loop: "{{ trainees }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Linux ユーザー名のバリデーション
+      ansible.builtin.assert:
+        that:
+          - item.linux_user is match('^[a-z_][a-z0-9._-]*$')
+          - item.linux_user | length <= 32
+        fail_msg: >
+          ユーザー名 "{{ item.linux_user }}" (元: {{ item.original_username }})
+          は Linux ユーザー名として無効です。
+          使用可能: 英小文字、数字、ドット、ハイフン、アンダースコア（先頭は英小文字または _）
+      loop: "{{ resolved_trainees }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
+
+    - name: パスワードを一括生成
+      ansible.builtin.set_fact:
+        final_trainees: []
+
+    - name: 各ユーザーのパスワードを確定
+      ansible.builtin.set_fact:
+        final_trainees: >-
+          {{
+            final_trainees + [{
+              'original_username': item.original_username,
+              'linux_user': item.linux_user,
+              'display_name': item.display_name,
+              'password': item.password if item.password else lookup('password', '/dev/null length=10 chars=ascii_letters,digits')
+            }]
+          }}
+      loop: "{{ resolved_trainees }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
+
+    - name: Linux ユーザーを作成
+      ansible.builtin.user:
+        name: "{{ item.linux_user }}"
+        password: "{{ item.password | password_hash('sha512') }}"
+        groups: "{{ training_group }}"
+        append: true
+        shell: /bin/bash
+        create_home: true
+        comment: "{{ item.display_name | default(item.original_username) }}"
+      loop: "{{ final_trainees }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
+
+    - name: /opt/airgap のパーミッションを確保
+      ansible.builtin.file:
+        path: /opt/airgap
+        mode: '0755'
+        state: directory
+
+    - name: MOTD を配置
+      ansible.builtin.copy:
+        dest: /etc/motd
+        mode: '0644'
+        content: |
+          === Ansible トレーニング環境 ===
+
+          演習環境の操作:
+            cd /opt/airgap
+            ./deploy-training.sh           環境を作成
+            ./deploy-training.sh status    環境の状態を確認
+            ./deploy-training.sh destroy   環境を削除（再作成可能）
+
+          問題が発生した場合は管理者にお問い合わせください。
+
+    - name: credentials.csv を生成
+      ansible.builtin.copy:
+        dest: /opt/airgap/credentials.csv
+        mode: '0600'
+        content: |
+          username,password,display_name
+          {% for t in final_trainees %}
+          {{ t.linux_user }},{{ t.password }},{{ t.display_name }}
+          {% endfor %}
+      no_log: true
+
+    - name: credentials.csv を bastion に取得
+      ansible.builtin.fetch:
+        src: /opt/airgap/credentials.csv
+        dest: "{{ credentials_file }}"
+        flat: true
+
+    - name: trainees.yml を更新（パスワード追記）
+      delegate_to: localhost
+      become: false
+      block:
+        - name: trainees.yml の更新データを生成
+          ansible.builtin.set_fact:
+            updated_trainees: >-
+              {{
+                final_trainees | map('dict2items')
+                | map('selectattr', 'key', 'in', ['original_username', 'linux_user', 'display_name', 'password'])
+                | map('items2dict')
+                | list
+              }}
+
+        - name: trainees.yml にパスワード情報を書き戻し
+          ansible.builtin.template:
+            src: trainees-updated.yml.j2
+            dest: "{{ trainees_file }}"
+            mode: '0600'
+
+    - name: 作成結果を表示
+      ansible.builtin.debug:
+        msg: |
+          === 受講者ユーザー作成完了 ===
+
+          作成ユーザー数: {{ final_trainees | length }}
+
+          {% for t in final_trainees %}
+          {{ t.linux_user }}{% if t.display_name %} ({{ t.display_name }}){% endif %}
+
+          {% endfor %}
+
+          credentials.csv: {{ credentials_file }}
+          trainees.yml: パスワード追記済み
+
+          次のステップ:
+            credentials.csv を受講者に配布してください。
+          ============================

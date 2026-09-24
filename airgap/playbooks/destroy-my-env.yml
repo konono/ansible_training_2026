@@ -5,57 +5,79 @@
   gather_facts: false
 
   vars:
-    client_ip: "{{ client_ip | default('unknown') }}"
+    training_username: "{{ training_username | default('') }}"
+    client_ip: "{{ client_ip | default('') }}"
     allocate_script: /opt/airgap/scripts/allocate.py
 
   tasks:
-    - name: SSH_CLIENT が設定されているか、テストモードであることを確認
+    - name: training_username または client_ip が指定されていることを確認
       ansible.builtin.assert:
         that:
-          - (lookup('env', 'SSH_CLIENT') | length > 0)
-            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
+          - (training_username | length > 0) or (client_ip | length > 0)
         fail_msg: >
-          SSH_CLIENT が未設定です。SSH 経由でログインしてから
-          destroy-training.sh を実行してください。
+          training_username または client_ip が未指定です。
+          deploy-training.sh destroy 経由で実行してください。
 
-    - name: client_ip が SSH 接続元またはテスト用 IP であることを確認
-      ansible.builtin.assert:
-        that:
-          - client_ip == (lookup('env', 'SSH_CLIENT') | split(' ') | first)
-            or (client_ip is match('^198\\.51\\.100\\.') and (lookup('env', 'ALLOW_TEST_IP') | default('0')) == '1')
-        fail_msg: >
-          client_ip ({{ client_ip }}) が SSH 接続元と一致しません。
-          destroy-training.sh 経由で実行してください。
-      when: lookup('env', 'SSH_CLIENT') | length > 0
-
-    - name: 自分の割当情報を取得
+    - name: 自分の割当情報を取得（username）
       ansible.builtin.command:
-        cmd: python3 {{ allocate_script }} --client-ip "{{ client_ip }}" --action lookup
+        cmd: >
+          python3 {{ allocate_script }}
+          --username "{{ training_username }}"
+          --action lookup
       register: my_alloc_raw
       changed_when: false
       failed_when: false
+      when: training_username | length > 0
+
+    - name: 自分の割当情報を取得（client_ip フォールバック）
+      ansible.builtin.command:
+        cmd: >
+          python3 {{ allocate_script }}
+          --client-ip "{{ client_ip }}"
+          --action lookup
+      register: my_alloc_ip_raw
+      changed_when: false
+      failed_when: false
+      when: training_username | length == 0 and client_ip | length > 0
+
+    - name: lookup 結果を統合
+      ansible.builtin.set_fact:
+        alloc_result: "{{ my_alloc_raw if (training_username | length > 0) else my_alloc_ip_raw }}"
 
     - name: 割当が見つからない場合はエラー
       ansible.builtin.fail:
         msg: >
+          {% if training_username | length > 0 %}
+          ユーザー {{ training_username }} に対応する環境が見つかりません。
+          {% else %}
           IP {{ client_ip }} に対応する環境が見つかりません。
+          {% endif %}
           既に削除済みか、未デプロイの可能性があります。
-      when: my_alloc_raw.rc != 0
+      when: alloc_result.rc != 0
 
     - name: 割当情報をパース
       ansible.builtin.set_fact:
-        my_alloc: "{{ my_alloc_raw.stdout | from_json }}"
+        my_alloc: "{{ alloc_result.stdout | from_json }}"
 
     - name: 削除対象を表示
       ansible.builtin.debug:
-        msg: "user_id={{ my_alloc.user_id }}, status={{ my_alloc.status }}"
+        msg: "user_id={{ my_alloc.user_id }}, username={{ my_alloc.username | default('-') }}, status={{ my_alloc.status }}"
 
-    - name: allocations を released に更新
+    - name: allocations を released に更新（username）
       ansible.builtin.command: >
         python3 {{ allocate_script }}
-        --client-ip "{{ client_ip }}"
+        --username "{{ my_alloc.username }}"
         --action release
       changed_when: true
+      when: my_alloc.username | default('') | length > 0
+
+    - name: allocations を released に更新（client_ip フォールバック）
+      ansible.builtin.command: >
+        python3 {{ allocate_script }}
+        --client-ip "{{ my_alloc.client_ip }}"
+        --action release
+      changed_when: true
+      when: my_alloc.username | default('') | length == 0
 
     - name: コンテナとネットワークを削除（docker-compose）
       ansible.builtin.command:

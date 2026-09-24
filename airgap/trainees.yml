@@ -1,0 +1,21 @@
+---
+# 受講者リスト — playbooks/setup-trainees.yml の入力ファイル
+#
+# username: メールアドレス形式の場合、@ より前をログインユーザー名として使用
+#           メールアドレス形式でない場合、そのままユーザー名として使用
+#           Linux で許可されない文字が含まれる場合はエラー
+# display_name: 任意。status 表示やラベルに使用
+#
+# Playbook 実行後、linux_user と password が自動追記されます。
+# credentials.csv も同時に生成されます。
+#
+# 使い方:
+#   1. 以下のリストに受講者情報を記入
+#   2. ansible-playbook -i inventory/hosts.yml playbooks/setup-trainees.yml
+#   3. credentials.csv を受講者に配布
+
+trainees:
+  # - username: yamada.taro@example.com
+  #   display_name: 山田太郎
+  # - username: suzuki.hanako@example.com
+  # - username: tanaka
