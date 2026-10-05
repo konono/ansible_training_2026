@@ -30,6 +30,7 @@
   loop:
     - { src: "{{ playbook_dir }}/../deploy-training.sh", dest: "deploy-training.sh" }
     - { src: "{{ playbook_dir }}/../destroy-training.sh", dest: "destroy-training.sh" }
+    - { src: "{{ playbook_dir }}/../manage-training.sh", dest: "manage-training.sh" }
   tags: sync-code
 
 - name: Playbook・ロール・設定を配置
