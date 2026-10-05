@@ -5,15 +5,15 @@
   gather_facts: false
 
   vars:
-    training_username: "{{ training_username | default('') }}"
-    client_ip: "{{ client_ip | default('') }}"
+    _training_username: "{{ training_username | default('') }}"
+    _client_ip: "{{ client_ip | default('') }}"
     allocate_script: /opt/airgap/scripts/allocate.py
 
   tasks:
     - name: training_username または client_ip が指定されていることを確認
       ansible.builtin.assert:
         that:
-          - (training_username | length > 0) or (client_ip | length > 0)
+          - (_training_username | length > 0) or (_client_ip | length > 0)
         fail_msg: >
           training_username または client_ip が未指定です。
           deploy-training.sh destroy 経由で実行してください。
@@ -22,35 +22,35 @@
       ansible.builtin.command:
         cmd: >
           python3 {{ allocate_script }}
-          --username "{{ training_username }}"
+          --username "{{ _training_username }}"
           --action lookup
       register: my_alloc_raw
       changed_when: false
       failed_when: false
-      when: training_username | length > 0
+      when: _training_username | length > 0
 
     - name: 自分の割当情報を取得（client_ip フォールバック）
       ansible.builtin.command:
         cmd: >
           python3 {{ allocate_script }}
-          --client-ip "{{ client_ip }}"
+          --client-ip "{{ _client_ip }}"
           --action lookup
       register: my_alloc_ip_raw
       changed_when: false
       failed_when: false
-      when: training_username | length == 0 and client_ip | length > 0
+      when: _training_username | length == 0 and _client_ip | length > 0
 
     - name: lookup 結果を統合
       ansible.builtin.set_fact:
-        alloc_result: "{{ my_alloc_raw if (training_username | length > 0) else my_alloc_ip_raw }}"
+        alloc_result: "{{ my_alloc_raw if (_training_username | length > 0) else my_alloc_ip_raw }}"
 
     - name: 割当が見つからない場合はエラー
       ansible.builtin.fail:
         msg: >
-          {% if training_username | length > 0 %}
-          ユーザー {{ training_username }} に対応する環境が見つかりません。
+          {% if _training_username | length > 0 %}
+          ユーザー {{ _training_username }} に対応する環境が見つかりません。
           {% else %}
-          IP {{ client_ip }} に対応する環境が見つかりません。
+          IP {{ _client_ip }} に対応する環境が見つかりません。
           {% endif %}
           既に削除済みか、未デプロイの可能性があります。
       when: alloc_result.rc != 0

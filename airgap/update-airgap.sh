@@ -7,17 +7,17 @@
 # 使い方:
 #   ./update-airgap.sh                          # bastion 自身の /opt/airgap/ を更新
 #   ./update-airgap.sh <bastion IP> [パスワード] # リモートの bastion に転送して更新
+#   ./update-airgap.sh --create-tar             # オフライン持ち込み用の tar を作成
 #
 # 例:
 #   ./update-airgap.sh                     # ローカル更新
 #   ./update-airgap.sh 192.168.100.2       # リモート更新（パスワード: password）
 #   ./update-airgap.sh 192.168.100.2 mypass
+#   ./update-airgap.sh --create-tar        # tar 作成のみ（USB 等で持ち込む用）
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BASTION_IP="${1:-}"
-BASTION_PASS="${2:-password}"
 DEST_DIR="/opt/airgap"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -29,6 +29,100 @@ NC='\033[0m'
 log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+# --- --create-tar: tar 作成のみ ---
+if [[ "${1:-}" == "--create-tar" ]]; then
+    if [[ ! -f "$SCRIPT_DIR/ansible.cfg" ]]; then
+        log_error "ソースディレクトリに ansible.cfg がありません。airgap/ ディレクトリから実行してください"
+        exit 1
+    fi
+
+    OUTPUT="${2:-$(dirname "$SCRIPT_DIR")/ansible_training_2026_update.tar.gz}"
+    log_info "アップデート用 tar を作成中..."
+
+    tar czf "$OUTPUT" \
+        -C "$(dirname "$SCRIPT_DIR")" \
+        --exclude='airgap/offline-resources' \
+        --exclude='airgap/kvm/vms/*.qcow2' \
+        --exclude='airgap/kvm/vms/win11' \
+        --exclude='airgap/.tracecraft' \
+        --exclude='airgap/inventory' \
+        --exclude='airgap/credentials' \
+        airgap/
+
+    SIZE=$(du -sh "$OUTPUT" | awk '{print $1}')
+    log_info "作成完了: $OUTPUT ($SIZE)"
+    echo ""
+    echo "bastion に持ち込んだ後の適用方法:"
+    echo "  cd /opt/airgap"
+    echo "  ./update-airgap.sh --apply-tar /path/to/$(basename "$OUTPUT")"
+    exit 0
+fi
+
+# --- --apply-tar: tar からローカル適用 ---
+if [[ "${1:-}" == "--apply-tar" ]]; then
+    APPLY_TAR="${2:-}"
+    if [[ -z "$APPLY_TAR" ]] || [[ ! -f "$APPLY_TAR" ]]; then
+        log_error "使い方: ./update-airgap.sh --apply-tar <tar.gz ファイル>"
+        exit 1
+    fi
+
+    log_info "tar からアップデートを適用: $APPLY_TAR"
+
+    # バックアップ
+    BACKUP_DIR="${DEST_DIR}/.backup_${TIMESTAMP}"
+    mkdir -p "$BACKUP_DIR"
+    cp -a "${DEST_DIR}/ansible.cfg"       "$BACKUP_DIR/" 2>/dev/null || true
+    cp -a "${DEST_DIR}/inventory/"        "$BACKUP_DIR/inventory/" 2>/dev/null || true
+    cp -a "${DEST_DIR}/group_vars/"       "$BACKUP_DIR/group_vars/" 2>/dev/null || true
+    cp -a "${DEST_DIR}/trainees.yml"      "$BACKUP_DIR/" 2>/dev/null || true
+    cp -a "${DEST_DIR}/rhel-version.conf" "$BACKUP_DIR/" 2>/dev/null || true
+    log_info "バックアップ先: $BACKUP_DIR/"
+
+    # 既存ファイルを削除（保持対象を除く）
+    find "$DEST_DIR" -maxdepth 1 \
+        -not -name "$(basename "$DEST_DIR")" \
+        -not -name 'offline-resources' \
+        -not -name 'inventory' \
+        -not -name 'credentials' \
+        -not -name '.backup_*' \
+        -mindepth 1 \
+        -exec rm -rf {} + 2>/dev/null || true
+
+    # 展開
+    cd /opt
+    tar xzf "$APPLY_TAR" --strip-components=0
+    log_info "展開完了"
+
+    # 環境固有ファイルの復元
+    if [[ -f "$BACKUP_DIR/trainees.yml" ]]; then
+        cp -a "$BACKUP_DIR/trainees.yml" "${DEST_DIR}/trainees.yml"
+        log_info "trainees.yml をバックアップから復元"
+    fi
+    if [[ -f "$BACKUP_DIR/rhel-version.conf" ]]; then
+        cp -a "$BACKUP_DIR/rhel-version.conf" "${DEST_DIR}/rhel-version.conf"
+        log_info "rhel-version.conf をバックアップから復元"
+    fi
+
+    # パーミッション修正
+    chmod +x "${DEST_DIR}"/*.sh 2>/dev/null || true
+    chmod +x "${DEST_DIR}"/scripts/*.py 2>/dev/null || true
+    chmod +x "${DEST_DIR}"/kvm/*.sh 2>/dev/null || true
+
+    log_info "アップデート完了"
+    echo ""
+    echo "training サーバーへの同期:"
+    echo "  cd ${DEST_DIR}"
+    echo "  ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml --tags sync-code"
+    echo ""
+    echo "ロールバック（問題があった場合）:"
+    echo "  cp -a ${BACKUP_DIR}/* ${DEST_DIR}/"
+    exit 0
+fi
+
+# --- 通常モード（ローカル / リモート） ---
+BASTION_IP="${1:-}"
+BASTION_PASS="${2:-password}"
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
@@ -92,7 +186,7 @@ tar czf "$ARCHIVE" \
     --exclude='airgap/kvm/vms/win11' \
     --exclude='airgap/.tracecraft' \
     --exclude='airgap/inventory' \
-    --exclude='airgap/credentials.csv' \
+    --exclude='airgap/credentials' \
     airgap/
 
 SIZE=$(du -sh "$ARCHIVE" | awk '{print $1}')
@@ -136,7 +230,7 @@ run_cmd "
         -not -name '$(basename "$DEST_DIR")' \
         -not -name 'offline-resources' \
         -not -name 'inventory' \
-        -not -name 'credentials.csv' \
+        -not -name 'credentials' \
         -not -name '.backup_*' \
         -mindepth 1 \
         -exec rm -rf {} + 2>/dev/null || true
@@ -156,7 +250,7 @@ log_info "Step 5: 環境固有ファイルの保持を確認"
 # inventory/, credentials.csv はアーカイブに含めていないため上書きされない
 # trainees.yml は既存データがあればバックアップから復元、なければテンプレートを配置
 run_cmd "
-    for f in inventory/hosts.yml credentials.csv; do
+    for f in inventory/hosts.yml; do
         if [[ -f ${DEST_DIR}/\$f ]]; then
             echo \"  保持: \$f（上書き対象外）\"
         fi
