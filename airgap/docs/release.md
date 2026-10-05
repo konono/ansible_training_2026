@@ -23,24 +23,34 @@
 | `playbooks/destroy-my-env.yml` | テンプレート再帰ループバグ修正 |
 | `deploy-training.sh` | --help 対応、status の受講者向け表示、show_usage 定義順修正 |
 | `trainees.yml` | ヘッダーコメント更新（ステートフル管理の説明） |
-| `update-airgap.sh` | `credentials.csv` → `credentials/`（ディレクトリ）に変更 |
+| `update-airgap.sh` | `--create-tar` / `--apply-tar` 追加、`credentials.csv` → `credentials/` 対応 |
 | `docs/deployment-guide.md` | インベントリ例から `ansible_become: true` 行を削除 |
 
 ## デプロイ済み環境への適用手順
 
 ### 方法 A: update-airgap.sh を使う（推奨）
 
-`update-airgap.sh` が既にデプロイ済みなら、通常のアップグレード手順で適用できます。
-[アップグレードガイド](upgrade-guide.md) を参照してください。
+#### A-1: オンライン環境から直接リモート更新（bastion に SSH 到達可能な場合）
+
+```bash
+cd /path/to/ansible_training_2026/airgap
+./update-airgap.sh 192.168.100.2 password
+```
+
+#### A-2: tar を USB 等で持ち込む（airgap 環境）
 
 ```bash
 # オンライン環境で tar 作成
-cd /path/to/ansible_training_2026
-./airgap/update-airgap.sh --create-tar
+cd /path/to/ansible_training_2026/airgap
+./update-airgap.sh --create-tar
+# → ansible_training_2026_update.tar.gz が作成される
 
-# tar を bastion に持ち込んで実行
+# tar を bastion に持ち込んで適用
 cd /opt/airgap
-./update-airgap.sh --apply-tar /path/to/ansible_training_2026_update.tar
+./update-airgap.sh --apply-tar /path/to/ansible_training_2026_update.tar.gz
+
+# training サーバーへ同期
+ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml --tags sync-code
 ```
 
 ### 方法 B: 手動で個別ファイルを配置
