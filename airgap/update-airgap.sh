@@ -92,7 +92,7 @@ tar czf "$ARCHIVE" \
     --exclude='airgap/kvm/vms/win11' \
     --exclude='airgap/.tracecraft' \
     --exclude='airgap/inventory' \
-    --exclude='airgap/credentials.csv' \
+    --exclude='airgap/credentials' \
     airgap/
 
 SIZE=$(du -sh "$ARCHIVE" | awk '{print $1}')
@@ -136,7 +136,7 @@ run_cmd "
         -not -name '$(basename "$DEST_DIR")' \
         -not -name 'offline-resources' \
         -not -name 'inventory' \
-        -not -name 'credentials.csv' \
+        -not -name 'credentials' \
         -not -name '.backup_*' \
         -mindepth 1 \
         -exec rm -rf {} + 2>/dev/null || true
@@ -156,7 +156,7 @@ log_info "Step 5: 環境固有ファイルの保持を確認"
 # inventory/, credentials.csv はアーカイブに含めていないため上書きされない
 # trainees.yml は既存データがあればバックアップから復元、なければテンプレートを配置
 run_cmd "
-    for f in inventory/hosts.yml credentials.csv; do
+    for f in inventory/hosts.yml; do
         if [[ -f ${DEST_DIR}/\$f ]]; then
             echo \"  保持: \$f（上書き対象外）\"
         fi

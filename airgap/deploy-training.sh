@@ -17,11 +17,31 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ALLOCATE_SCRIPT="$SCRIPT_DIR/scripts/allocate.py"
 
+# --- ヘルプ ---
+show_usage() {
+    cat << 'USAGE'
+
+使い方:
+  ./deploy-training.sh                             環境を作成（ログインユーザーで自動識別）
+  ./deploy-training.sh --label 山田太郎            受講者名を指定して作成
+  ./deploy-training.sh status                      自分の環境を表示（root: 全環境の一覧）
+  ./deploy-training.sh destroy                     自分の環境を削除（ログインユーザー）
+  ./deploy-training.sh destroy --user 3            user_id を指定して削除
+  ./deploy-training.sh destroy --username tanaka   ユーザー名を指定して削除
+  ./deploy-training.sh destroy --ip 10.0.0.5       IP アドレスを指定して削除（後方互換）
+  ./deploy-training.sh --test 3                    テスト環境を 3 人分作成
+  ./deploy-training.sh destroy --test              テスト環境を全て削除
+USAGE
+}
+
 # --- サブコマンドの判定 ---
 SUBCOMMAND="deploy"
 if [[ ${1:-} == "status" ]] || [[ ${1:-} == "destroy" ]]; then
     SUBCOMMAND="$1"
     shift
+elif [[ ${1:-} == "help" ]] || [[ ${1:-} == "--help" ]] || [[ ${1:-} == "-h" ]]; then
+    show_usage
+    exit 0
 fi
 
 # --- 引数の解析 ---
@@ -43,33 +63,92 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --label)    CLIENT_LABEL="$2"; shift 2 ;;
-        --name)     CLIENT_LABEL="$2"; shift 2 ;;  # 後方互換
+        --name)     CLIENT_LABEL="$2"; shift 2 ;;
         --user)     DESTROY_USER_ID="$2"; shift 2 ;;
         --ip)       DESTROY_IP="$2"; shift 2 ;;
         --username) DESTROY_USERNAME="$2"; shift 2 ;;
-        *)          echo "不明なオプション: $1"; show_usage; exit 1 ;;
+        --help|-h)  show_usage; exit 0 ;;
+        *)
+            echo "不明なオプション: $1"
+            show_usage
+            exit 1
+            ;;
     esac
 done
 
-# --- ヘルプ ---
-show_usage() {
-    cat << 'USAGE'
-
-使い方:
-  ./deploy-training.sh                             環境を作成（ログインユーザーで自動識別）
-  ./deploy-training.sh --label 山田太郎            受講者名を指定して作成
-  ./deploy-training.sh status                      環境の一覧を表示
-  ./deploy-training.sh destroy                     自分の環境を削除（ログインユーザー）
-  ./deploy-training.sh destroy --user 3            user_id を指定して削除
-  ./deploy-training.sh destroy --username tanaka   ユーザー名を指定して削除
-  ./deploy-training.sh destroy --ip 10.0.0.5       IP アドレスを指定して削除（後方互換）
-  ./deploy-training.sh --test 3                    テスト環境を 3 人分作成
-  ./deploy-training.sh destroy --test              テスト環境を全て削除
-USAGE
-}
-
 # --- status サブコマンド ---
 do_status() {
+    local current_user
+    current_user="$(whoami)"
+
+    if [[ "$current_user" != "root" ]]; then
+        do_status_user "$current_user"
+        return
+    fi
+
+    do_status_all
+}
+
+do_status_user() {
+    local username="$1"
+    local status_json
+    status_json=$(python3 "$ALLOCATE_SCRIPT" --action status 2>/dev/null)
+
+    local alloc
+    alloc=$(echo "$status_json" | python3 -c "
+import json, sys
+username = '$username'
+data = json.load(sys.stdin)
+for a in data['allocations']:
+    if a['status'] == 'released':
+        continue
+    if a.get('username') == username:
+        print(json.dumps(a))
+        sys.exit(0)
+print('')
+" 2>/dev/null)
+
+    if [[ -z "$alloc" ]]; then
+        echo "デプロイ済みの環境はありません。"
+        echo ""
+        echo "環境を作成するには:"
+        echo "  ./deploy-training.sh"
+        return
+    fi
+
+    local training_ip
+    training_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    training_ip="${training_ip:-192.168.100.10}"
+
+    echo "$alloc" | python3 -c "
+import json, sys
+a = json.load(sys.stdin)
+ip = '$training_ip'
+print('=== あなたの演習環境 ===')
+print()
+print(f'  ユーザー:    {a.get(\"username\", \"-\")}')
+hostname = a.get('client_hostname', '')
+if hostname:
+    print(f'  表示名:      {hostname}')
+status = a['status']
+status_label = {'active': '稼働中', 'allocated': '割当済み（起動待ち）'}.get(status, status)
+print(f'  ステータス:  {status_label}')
+print()
+print(f'  接続方法:')
+print(f'    ssh -p {a[\"ssh_port\"]} root@{ip}')
+print(f'    パスワード: password')
+print()
+c = a.get('containers', {})
+print('  演習用ネットワーク:')
+for name, addr in c.items():
+    print(f'    {name:12s}  {addr}')
+print()
+print(f'  環境の削除: ./deploy-training.sh destroy')
+print()
+" 2>/dev/null
+}
+
+do_status_all() {
     local status_json
     status_json=$(python3 "$ALLOCATE_SCRIPT" --action status 2>/dev/null)
 

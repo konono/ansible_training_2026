@@ -1,5 +1,5 @@
 ---
-- name: 受講者ユーザーの一括作成
+- name: 受講者ユーザーの管理（ステートフル）
   hosts: rhel
   become: true
   gather_facts: false
@@ -9,18 +9,14 @@
 
   vars:
     training_group: training
-    credentials_file: "{{ playbook_dir }}/../credentials.csv"
+    credentials_dir: "{{ playbook_dir }}/../credentials"
     trainees_file: "{{ playbook_dir }}/../trainees.yml"
+    allocate_script: /opt/airgap/scripts/allocate.py
 
   pre_tasks:
-    - name: trainees リストが空でないことを確認
-      ansible.builtin.assert:
-        that:
-          - trainees is defined
-          - trainees | length > 0
-        fail_msg: >
-          trainees.yml にエントリがありません。
-          受講者情報を記入してから実行してください。
+    - name: trainees リストを正規化（未定義・null を空リストに）
+      ansible.builtin.set_fact:
+        trainees: "{{ trainees | default([]) }}"
 
     - name: training グループを作成
       ansible.builtin.group:
@@ -28,11 +24,21 @@
         state: present
 
   tasks:
+    # =========================================================
+    # Phase 1: 入力解決
+    # =========================================================
+
+    - name: 変数を初期化
+      ansible.builtin.set_fact:
+        resolved_trainees: []
+        final_trainees: []
+        users_password_mismatch: []
+
     - name: ユーザー名を解決（メールアドレスのローカルパート抽出）
       ansible.builtin.set_fact:
         resolved_trainees: >-
           {{
-            resolved_trainees | default([]) + [{
+            resolved_trainees + [{
               'original_username': item.username,
               'linux_user': item.linux_user | default(
                 (item.username | regex_replace('@.*$', '')) if '@' in item.username
@@ -59,11 +65,7 @@
       loop_control:
         label: "{{ item.linux_user }}"
 
-    - name: パスワードを一括生成
-      ansible.builtin.set_fact:
-        final_trainees: []
-
-    - name: 各ユーザーのパスワードを確定
+    - name: 各ユーザーのパスワードを確定（未設定ならランダム生成）
       ansible.builtin.set_fact:
         final_trainees: >-
           {{
@@ -78,7 +80,167 @@
       loop_control:
         label: "{{ item.linux_user }}"
 
-    - name: Linux ユーザーを作成
+    # =========================================================
+    # Phase 2: 現状把握
+    # =========================================================
+
+    - name: training グループの既存メンバーを取得
+      ansible.builtin.shell: |
+        getent group {{ training_group }} 2>/dev/null | cut -d: -f4 | tr ',' '\n' | grep -v '^$' || true
+      register: existing_members_raw
+      changed_when: false
+
+    - name: メンバーリストを整理
+      ansible.builtin.set_fact:
+        existing_members: "{{ existing_members_raw.stdout_lines | default([]) }}"
+        desired_members: "{{ final_trainees | map(attribute='linux_user') | list }}"
+
+    # =========================================================
+    # Phase 3: 差分計算
+    # =========================================================
+
+    - name: 差分を計算
+      ansible.builtin.set_fact:
+        users_to_delete: "{{ existing_members | difference(desired_members) }}"
+        users_to_create: "{{ desired_members | difference(existing_members) }}"
+        users_to_keep: "{{ desired_members | intersect(existing_members) }}"
+
+    - name: 差分サマリーを表示
+      ansible.builtin.debug:
+        msg: |
+          === ユーザー管理差分 ===
+          作成: {{ users_to_create | join(', ') or 'なし' }}
+          維持: {{ users_to_keep | join(', ') or 'なし' }}
+          削除: {{ users_to_delete | join(', ') or 'なし' }}
+
+    # =========================================================
+    # Phase 4: 削除処理
+    # =========================================================
+
+    - name: 削除対象ユーザーの演習環境を破棄
+      when: users_to_delete | length > 0
+      block:
+        - name: 削除対象ユーザーの allocation を検索
+          ansible.builtin.command:
+            argv:
+              - python3
+              - "{{ allocate_script }}"
+              - --username
+              - "{{ item }}"
+              - --action
+              - lookup
+          register: delete_alloc_results
+          loop: "{{ users_to_delete }}"
+          loop_control:
+            label: "{{ item }}"
+          changed_when: false
+          failed_when: false
+
+        - name: 稼働中の環境を停止・削除
+          ansible.builtin.shell: |
+            alloc='{{ item.stdout }}'
+            user_id=$(echo "$alloc" | python3 -c "import json,sys; print(json.load(sys.stdin)['user_id'])" 2>/dev/null) || exit 0
+            training_dir="/opt/training/user${user_id}/ansible_training_2026/containers"
+            if [ -d "$training_dir" ]; then
+              /usr/local/bin/docker-compose -p "user${user_id}" down --remove-orphans 2>/dev/null || \
+              for c in "user${user_id}_controller" "user${user_id}_node1" "user${user_id}_node2" "user${user_id}_node3" "user${user_id}_lb"; do
+                podman stop "$c" 2>/dev/null; podman rm -f "$c" 2>/dev/null
+              done
+              podman network rm "user${user_id}_ansible_net" 2>/dev/null || true
+            fi
+            rm -rf "/opt/training/user${user_id}"
+          environment:
+            DOCKER_HOST: "unix:///run/podman/podman.sock"
+          loop: "{{ delete_alloc_results.results | selectattr('rc', 'eq', 0) | list }}"
+          loop_control:
+            label: "{{ item.item }}"
+          changed_when: true
+
+        - name: 削除対象ユーザーの allocation を release
+          ansible.builtin.command:
+            argv:
+              - python3
+              - "{{ allocate_script }}"
+              - --username
+              - "{{ item.item }}"
+              - --action
+              - release
+          loop: "{{ delete_alloc_results.results | selectattr('rc', 'eq', 0) | list }}"
+          loop_control:
+            label: "{{ item.item }}"
+          changed_when: true
+          failed_when: false
+
+    - name: 不要なユーザーアカウントを削除
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: absent
+        remove: true
+      loop: "{{ users_to_delete }}"
+
+    - name: 削除ユーザーの credential CSV を削除（リモート）
+      ansible.builtin.file:
+        path: "/opt/airgap/credentials/{{ item }}.csv"
+        state: absent
+      loop: "{{ users_to_delete }}"
+
+    # =========================================================
+    # Phase 5: パスワード検証（維持対象ユーザー）
+    # =========================================================
+
+    - name: 既存ユーザーのパスワード一致を確認
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import crypt, sys
+            username, password = sys.argv[1], sys.argv[2]
+            with open('/etc/shadow') as f:
+                for line in f:
+                    parts = line.strip().split(':')
+                    if parts[0] == username:
+                        h = parts[1]
+                        if not h or h in ('!', '!!', '*'):
+                            print('MISMATCH')
+                            sys.exit(0)
+                        if crypt.crypt(password, h) == h:
+                            print('MATCH')
+                        else:
+                            print('MISMATCH')
+                        sys.exit(0)
+            print('NOUSER')
+          - "{{ item.linux_user }}"
+          - "{{ item.password }}"
+      register: pw_checks
+      loop: "{{ final_trainees | selectattr('linux_user', 'in', users_to_keep) | list }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
+      changed_when: false
+      no_log: true
+
+    - name: パスワード不一致ユーザーを特定
+      ansible.builtin.set_fact:
+        users_password_mismatch: >-
+          {{
+            pw_checks.results | default([])
+            | selectattr('stdout', 'defined')
+            | selectattr('stdout', 'equalto', 'MISMATCH')
+            | map(attribute='item')
+            | map(attribute='linux_user')
+            | list
+          }}
+
+    - name: パスワード不一致を報告
+      ansible.builtin.debug:
+        msg: "パスワード更新対象: {{ users_password_mismatch | join(', ') }}"
+      when: users_password_mismatch | length > 0
+
+    # =========================================================
+    # Phase 6: ユーザー作成・更新
+    # =========================================================
+
+    - name: ユーザーを作成・確認（グループ・コメント・ホーム）
       ansible.builtin.user:
         name: "{{ item.linux_user }}"
         password: "{{ item.password | password_hash('sha512') }}"
@@ -87,9 +249,24 @@
         shell: /bin/bash
         create_home: true
         comment: "{{ item.display_name | default(item.original_username) }}"
+        update_password: on_create
       loop: "{{ final_trainees }}"
       loop_control:
         label: "{{ item.linux_user }}"
+
+    - name: パスワード不一致ユーザーのパスワードを強制更新
+      ansible.builtin.user:
+        name: "{{ item.linux_user }}"
+        password: "{{ item.password | password_hash('sha512') }}"
+        update_password: always
+      loop: "{{ final_trainees | selectattr('linux_user', 'in', users_password_mismatch) | list }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
+      when: users_password_mismatch | length > 0
+
+    # =========================================================
+    # Phase 7: per-user credential CSV 生成
+    # =========================================================
 
     - name: /opt/airgap のパーミッションを確保
       ansible.builtin.file:
@@ -112,58 +289,115 @@
 
           問題が発生した場合は管理者にお問い合わせください。
 
-    - name: credentials.csv を生成
+    - name: credentials ディレクトリを作成（リモート）
+      ansible.builtin.file:
+        path: /opt/airgap/credentials
+        state: directory
+        mode: '0700'
+
+    - name: ユーザーごとの credential CSV を生成（リモート）
       ansible.builtin.copy:
-        dest: /opt/airgap/credentials.csv
+        dest: "/opt/airgap/credentials/{{ item.linux_user }}.csv"
         mode: '0600'
         content: |
           username,password,display_name
-          {% for t in final_trainees %}
-          {{ t.linux_user }},{{ t.password }},{{ t.display_name }}
-          {% endfor %}
+          {{ item.linux_user }},{{ item.password }},{{ item.display_name }}
+      loop: "{{ final_trainees }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
       no_log: true
 
-    - name: credentials.csv を bastion に取得
-      ansible.builtin.fetch:
-        src: /opt/airgap/credentials.csv
-        dest: "{{ credentials_file }}"
-        flat: true
-
-    - name: trainees.yml を更新（パスワード追記）
+    - name: credentials ディレクトリを作成（ローカル）
+      ansible.builtin.file:
+        path: "{{ credentials_dir }}"
+        state: directory
+        mode: '0700'
       delegate_to: localhost
       become: false
-      block:
-        - name: trainees.yml の更新データを生成
-          ansible.builtin.set_fact:
-            updated_trainees: >-
-              {{
-                final_trainees | map('dict2items')
-                | map('selectattr', 'key', 'in', ['original_username', 'linux_user', 'display_name', 'password'])
-                | map('items2dict')
-                | list
-              }}
+      run_once: true
 
-        - name: trainees.yml にパスワード情報を書き戻し
-          ansible.builtin.template:
-            src: trainees-updated.yml.j2
-            dest: "{{ trainees_file }}"
-            mode: '0600'
+    - name: ユーザーごとの credential CSV を生成（ローカル）
+      ansible.builtin.copy:
+        dest: "{{ credentials_dir }}/{{ item.linux_user }}.csv"
+        mode: '0600'
+        content: |
+          username,password,display_name
+          {{ item.linux_user }},{{ item.password }},{{ item.display_name }}
+      loop: "{{ final_trainees }}"
+      loop_control:
+        label: "{{ item.linux_user }}"
+      delegate_to: localhost
+      become: false
+      no_log: true
 
-    - name: 作成結果を表示
+    - name: 削除ユーザーの credential CSV を削除（ローカル）
+      ansible.builtin.file:
+        path: "{{ credentials_dir }}/{{ item }}.csv"
+        state: absent
+      loop: "{{ users_to_delete }}"
+      delegate_to: localhost
+      become: false
+
+    # =========================================================
+    # Phase 8: 旧 credentials.csv の削除
+    # =========================================================
+
+    - name: 旧 credentials.csv を削除（リモート）
+      ansible.builtin.file:
+        path: /opt/airgap/credentials.csv
+        state: absent
+
+    - name: 旧 credentials.csv を削除（ローカル）
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../credentials.csv"
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    # =========================================================
+    # Phase 9: trainees.yml 更新（パスワード書き戻し）
+    # =========================================================
+
+    - name: trainees.yml にパスワード情報を書き戻し
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.template:
+        src: trainees-updated.yml.j2
+        dest: "{{ trainees_file }}"
+        mode: '0600'
+
+    # =========================================================
+    # Phase 10: 結果表示
+    # =========================================================
+
+    - name: 管理結果を表示
       ansible.builtin.debug:
         msg: |
-          === 受講者ユーザー作成完了 ===
+          === 受講者ユーザー管理完了 ===
 
-          作成ユーザー数: {{ final_trainees | length }}
-
-          {% for t in final_trainees %}
-          {{ t.linux_user }}{% if t.display_name %} ({{ t.display_name }}){% endif %}
-
+          作成: {{ users_to_create | length }} 名
+          {% for u in users_to_create %}
+            - {{ u }}
           {% endfor %}
 
-          credentials.csv: {{ credentials_file }}
+          パスワード更新: {{ users_password_mismatch | length }} 名
+          {% for u in users_password_mismatch %}
+            - {{ u }}
+          {% endfor %}
+
+          削除: {{ users_to_delete | length }} 名
+          {% for u in users_to_delete %}
+            - {{ u }}
+          {% endfor %}
+
+          維持（変更なし）: {{ (users_to_keep | difference(users_password_mismatch)) | length }} 名
+
+          credential CSV: {{ credentials_dir }}/
           trainees.yml: パスワード追記済み
 
           次のステップ:
-            credentials.csv を受講者に配布してください。
+            各ユーザーの CSV を配布してください。
+            例: credentials/<ユーザー名>.csv
           ============================

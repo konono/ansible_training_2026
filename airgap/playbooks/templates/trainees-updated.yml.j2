@@ -1,5 +1,11 @@
 ---
-# 受講者リスト — playbooks/setup-trainees.yml の入力ファイル
+# 受講者リスト — playbooks/setup-trainees.yml の入力ファイル（ステートフル管理）
+#
+# このファイルは受講者の「あるべき姿」を定義します。
+# Playbook を実行すると、現在のシステム状態との差分が適用されます:
+#   - ユーザーを追加 → Linux アカウント作成 + credential CSV 生成
+#   - ユーザーを削除 → Linux アカウント削除 + 演習環境の自動破棄
+#   - password を変更 → システムパスワードを更新
 #
 # username: メールアドレス形式の場合、@ より前をログインユーザー名として使用
 #           メールアドレス形式でない場合、そのままユーザー名として使用
@@ -7,12 +13,12 @@
 # display_name: 任意。status 表示やラベルに使用
 #
 # Playbook 実行後、linux_user と password が自動追記されます。
-# credentials.csv も同時に生成されます。
+# credentials/<ユーザー名>.csv が個別に生成されます。
 #
 # 使い方:
-#   1. 以下のリストに受講者情報を記入
+#   1. 以下のリストに受講者情報を記入（削除する場合はエントリを消す）
 #   2. ansible-playbook -i inventory/hosts.yml playbooks/setup-trainees.yml
-#   3. credentials.csv を受講者に配布
+#   3. credentials/<ユーザー名>.csv を各受講者に配布
 
 trainees:
 {% for t in final_trainees %}

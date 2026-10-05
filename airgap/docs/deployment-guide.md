@@ -167,7 +167,6 @@ all:
   vars:
     ansible_user: admin              # SSH 接続ユーザー（root または sudo 可能な一般ユーザー）
     ansible_password: password       # SSH パスワード
-    ansible_become: true             # 特権昇格を有効化
     ansible_become_method: sudo
     ansible_become_password: "{{ ansible_password }}"  # sudo パスワード（SSH と同じ場合）
   children:

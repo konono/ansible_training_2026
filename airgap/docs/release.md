@@ -1,0 +1,158 @@
+# リリースノート — stateful-trainees-management
+
+## 変更概要
+
+受講者管理のステートフル化、become 設計の整理、管理ツールの追加。
+
+## 変更ファイル一覧
+
+### 新規ファイル
+
+| ファイル | 説明 |
+|---|---|
+| `manage-training.sh` | 管理者向け環境管理ツール（list / info / health / cleanup 等） |
+
+### 変更ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `ansible.cfg` | `[privilege_escalation]` セクション削除（become は play レベルで制御） |
+| `inventory/hosts.yml` | `ansible_become: true` 削除（become_method / become_password は維持） |
+| `playbooks/setup-trainees.yml` | 全面リライト: ステートフル管理（追加/削除/パスワード更新）、per-user CSV |
+| `playbooks/templates/trainees-updated.yml.j2` | ステートフル管理の説明コメントを追加 |
+| `playbooks/destroy-my-env.yml` | テンプレート再帰ループバグ修正 |
+| `deploy-training.sh` | --help 対応、status の受講者向け表示、show_usage 定義順修正 |
+| `trainees.yml` | ヘッダーコメント更新（ステートフル管理の説明） |
+| `update-airgap.sh` | `credentials.csv` → `credentials/`（ディレクトリ）に変更 |
+| `docs/deployment-guide.md` | インベントリ例から `ansible_become: true` 行を削除 |
+
+## デプロイ済み環境への適用手順
+
+### 方法 A: update-airgap.sh を使う（推奨）
+
+`update-airgap.sh` が既にデプロイ済みなら、通常のアップグレード手順で適用できます。
+[アップグレードガイド](upgrade-guide.md) を参照してください。
+
+```bash
+# オンライン環境で tar 作成
+cd /path/to/ansible_training_2026
+./airgap/update-airgap.sh --create-tar
+
+# tar を bastion に持ち込んで実行
+cd /opt/airgap
+./update-airgap.sh --apply-tar /path/to/ansible_training_2026_update.tar
+```
+
+### 方法 B: 手動で個別ファイルを配置
+
+bastion と training サーバーそれぞれに、該当ファイルを手動で配置します。
+
+#### bastion（/opt/airgap/）
+
+```bash
+# 1. ansible.cfg — [privilege_escalation] セクションを削除
+vi /opt/airgap/ansible.cfg
+# 以下の行を削除:
+#   [privilege_escalation]
+#   become = True
+#   become_method = sudo
+
+# 2. inventory/hosts.yml — ansible_become: true の行を削除
+vi /opt/airgap/inventory/hosts.yml
+# 以下の行を削除:
+#   ansible_become: true
+
+# 3. playbooks/ — 変更のあった playbook・テンプレートを上書き
+scp playbooks/setup-trainees.yml       bastion:/opt/airgap/playbooks/
+scp playbooks/destroy-my-env.yml       bastion:/opt/airgap/playbooks/
+scp playbooks/templates/trainees-updated.yml.j2 bastion:/opt/airgap/playbooks/templates/
+
+# 4. スクリプト — deploy-training.sh と manage-training.sh を配置
+scp deploy-training.sh                 bastion:/opt/airgap/
+scp manage-training.sh                 bastion:/opt/airgap/
+chmod +x bastion:/opt/airgap/manage-training.sh
+
+# 5. update-airgap.sh — credentials ディレクトリ対応
+scp update-airgap.sh                   bastion:/opt/airgap/
+
+# 6. trainees.yml — ヘッダーコメントのみ変更（既存データがあれば上書き注意）
+#    ※ 既に受講者データが入っている場合はヘッダーだけ手動で書き換える
+```
+
+#### training サーバー（/opt/airgap/）
+
+```bash
+# bastion から training へ同期（bastion 上で実行）
+for f in \
+    playbooks/setup-trainees.yml \
+    playbooks/destroy-my-env.yml \
+    playbooks/templates/trainees-updated.yml.j2 \
+    deploy-training.sh \
+    manage-training.sh; do
+  scp /opt/airgap/$f root@<training-ip>:/opt/airgap/$f
+done
+chmod +x root@<training-ip>:/opt/airgap/manage-training.sh
+```
+
+**注意**: `ansible.cfg` と `inventory/hosts.yml` は training サーバーにも配置されている場合がありますが、training サーバー上のこれらは bastion から `rhel-setup.yml` で自動配置されるため、bastion 側を修正してから `rhel-setup.yml` を再実行するのが確実です。
+
+```bash
+cd /opt/airgap
+ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
+```
+
+### 方法 C: ファイル差分の一括適用（最もシンプル）
+
+bastion 上で以下を実行すると、変更のあったファイルだけを一括で上書きできます。
+
+```bash
+# オンライン環境で変更ファイルだけの tar を作成
+cd /path/to/ansible_training_2026
+tar czf airgap-patch.tar.gz \
+    airgap/ansible.cfg \
+    airgap/inventory/hosts.yml \
+    airgap/deploy-training.sh \
+    airgap/manage-training.sh \
+    airgap/update-airgap.sh \
+    airgap/trainees.yml \
+    airgap/playbooks/setup-trainees.yml \
+    airgap/playbooks/destroy-my-env.yml \
+    airgap/playbooks/templates/trainees-updated.yml.j2 \
+    airgap/docs/deployment-guide.md
+
+# bastion に持ち込んで展開
+cd /opt
+tar xzf /path/to/airgap-patch.tar.gz
+
+# training サーバーへ反映
+cd /opt/airgap
+ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml
+```
+
+## 適用後の確認
+
+```bash
+# 1. ansible.cfg に [privilege_escalation] がないこと
+grep -c 'privilege_escalation' /opt/airgap/ansible.cfg
+# → 0
+
+# 2. inventory に ansible_become: true がないこと
+grep -c 'ansible_become: true' /opt/airgap/inventory/hosts.yml
+# → 0
+
+# 3. 全 playbook が admin ユーザーで動作すること
+cd /opt/airgap
+ansible -i inventory/hosts.yml all -m ping
+
+# 4. manage-training.sh が動作すること
+./manage-training.sh health
+
+# 5. setup-trainees.yml が動作すること（冪等性確認）
+ansible-playbook -i inventory/hosts.yml playbooks/setup-trainees.yml
+```
+
+## 破壊的変更
+
+- **`credentials.csv`（統合版）は廃止**: `setup-trainees.yml` 実行時に既存の `credentials.csv` は自動削除されます。代わりに `credentials/<ユーザー名>.csv` が個別生成されます。
+- **`ansible.cfg` の `[privilege_escalation]` セクション削除**: become は各 playbook の play レベルで `become: true` を明示する方針に変更。既にデプロイ済みの環境では `ansible.cfg` を手動で編集する必要があります。
+- **`inventory/hosts.yml` の `ansible_become: true` 削除**: 同上。become の有効化は play レベルの `become: true` が担当します。
