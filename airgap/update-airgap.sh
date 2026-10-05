@@ -62,14 +62,47 @@ fi
 # --- --apply-tar: tar からローカル適用 ---
 if [[ "${1:-}" == "--apply-tar" ]]; then
     APPLY_TAR="${2:-}"
-    if [[ -z "$APPLY_TAR" ]] || [[ ! -f "$APPLY_TAR" ]]; then
+    if [[ -z "$APPLY_TAR" ]]; then
         log_error "使い方: ./update-airgap.sh --apply-tar <tar.gz ファイル>"
+        exit 1
+    fi
+
+    # 相対パスを絶対パスに変換（cd /opt の前に解決する）
+    if [[ "$APPLY_TAR" != /* ]]; then
+        APPLY_TAR="$(pwd)/$APPLY_TAR"
+    fi
+
+    if [[ ! -f "$APPLY_TAR" ]]; then
+        log_error "tar ファイルが見つかりません: $APPLY_TAR"
         exit 1
     fi
 
     log_info "tar からアップデートを適用: $APPLY_TAR"
 
-    # バックアップ
+    # Step 1: 一時ディレクトリに展開して検証（既存ファイルに触らない）
+    TMPDIR=$(mktemp -d /tmp/airgap-apply-XXXXXX)
+    trap 'rm -rf "$TMPDIR"' EXIT
+
+    log_info "tar を検証中..."
+    if ! tar xzf "$APPLY_TAR" -C "$TMPDIR" 2>&1; then
+        log_error "tar の展開に失敗しました。既存ファイルは変更されていません。"
+        exit 1
+    fi
+
+    # 展開結果に airgap/ が含まれているか確認
+    if [[ ! -d "$TMPDIR/airgap" ]]; then
+        log_error "tar に airgap/ ディレクトリが含まれていません。既存ファイルは変更されていません。"
+        exit 1
+    fi
+
+    # 必須ファイルの存在確認
+    if [[ ! -f "$TMPDIR/airgap/ansible.cfg" ]]; then
+        log_error "tar に ansible.cfg が含まれていません。既存ファイルは変更されていません。"
+        exit 1
+    fi
+    log_info "tar の検証OK"
+
+    # Step 2: バックアップ
     BACKUP_DIR="${DEST_DIR}/.backup_${TIMESTAMP}"
     mkdir -p "$BACKUP_DIR"
     cp -a "${DEST_DIR}/ansible.cfg"       "$BACKUP_DIR/" 2>/dev/null || true
@@ -79,7 +112,7 @@ if [[ "${1:-}" == "--apply-tar" ]]; then
     cp -a "${DEST_DIR}/rhel-version.conf" "$BACKUP_DIR/" 2>/dev/null || true
     log_info "バックアップ先: $BACKUP_DIR/"
 
-    # 既存ファイルを削除（保持対象を除く）
+    # Step 3: 既存ファイルを削除（保持対象を除く）して展開済みファイルを配置
     find "$DEST_DIR" -maxdepth 1 \
         -not -name "$(basename "$DEST_DIR")" \
         -not -name 'offline-resources' \
@@ -89,12 +122,12 @@ if [[ "${1:-}" == "--apply-tar" ]]; then
         -mindepth 1 \
         -exec rm -rf {} + 2>/dev/null || true
 
-    # 展開
-    cd /opt
-    tar xzf "$APPLY_TAR" --strip-components=0
+    # 検証済みのファイルを配置
+    cp -a "$TMPDIR"/airgap/* "$DEST_DIR"/
+    cp -a "$TMPDIR"/airgap/.??* "$DEST_DIR"/ 2>/dev/null || true
     log_info "展開完了"
 
-    # 環境固有ファイルの復元
+    # Step 4: 環境固有ファイルの復元
     if [[ -f "$BACKUP_DIR/trainees.yml" ]]; then
         cp -a "$BACKUP_DIR/trainees.yml" "${DEST_DIR}/trainees.yml"
         log_info "trainees.yml をバックアップから復元"
@@ -104,7 +137,7 @@ if [[ "${1:-}" == "--apply-tar" ]]; then
         log_info "rhel-version.conf をバックアップから復元"
     fi
 
-    # パーミッション修正
+    # Step 5: パーミッション修正
     chmod +x "${DEST_DIR}"/*.sh 2>/dev/null || true
     chmod +x "${DEST_DIR}"/scripts/*.py 2>/dev/null || true
     chmod +x "${DEST_DIR}"/kvm/*.sh 2>/dev/null || true
