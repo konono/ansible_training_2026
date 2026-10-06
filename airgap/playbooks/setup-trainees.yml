@@ -373,24 +373,52 @@
     # Phase 10: sshd AllowUsers 管理
     # =========================================================
 
-    - name: 既存の AllowUsers 設定を検索
-      ansible.builtin.shell: |
-        grep -rh '^\s*AllowUsers' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null \
-          | tail -1 || true
-      register: existing_allowusers_raw
+    - name: sshd_config の AllowUsers を読み取り
+      ansible.builtin.command:
+        cmd: grep -h '^\s*AllowUsers' /etc/ssh/sshd_config
+      register: allowusers_main
       changed_when: false
+      failed_when: false
 
-    - name: 既存の AllowUsers ユーザーリストをパース
+    - name: sshd_config.d/ の AllowUsers を読み取り
+      ansible.builtin.find:
+        paths: /etc/ssh/sshd_config.d
+        patterns: '*.conf'
+        excludes: '60-allow-users.conf'
+      register: sshd_drop_in_files
+
+    - name: ドロップインファイルから AllowUsers を読み取り
+      ansible.builtin.command:
+        cmd: grep -h '^\s*AllowUsers' {{ item.path }}
+      loop: "{{ sshd_drop_in_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      register: allowusers_dropins
+      changed_when: false
+      failed_when: false
+
+    - name: 管理対象ドロップイン (60-allow-users.conf) の AllowUsers を読み取り
+      ansible.builtin.command:
+        cmd: grep -h '^\s*AllowUsers' /etc/ssh/sshd_config.d/60-allow-users.conf
+      register: allowusers_managed
+      changed_when: false
+      failed_when: false
+
+    - name: 全ソースの AllowUsers ユーザーを統合
       ansible.builtin.set_fact:
         existing_allow_users: >-
           {{
-            existing_allowusers_raw.stdout
-            | regex_replace('^\s*AllowUsers\s+', '')
+            (
+              [allowusers_main.stdout | default('')]
+              + (allowusers_dropins.results | default([]) | map(attribute='stdout') | list)
+              + [allowusers_managed.stdout | default('')]
+            )
+            | join(' ')
+            | regex_replace('AllowUsers', ' ')
             | split
             | select
+            | unique
             | list
-            if existing_allowusers_raw.stdout | trim | length > 0
-            else []
           }}
 
     - name: AllowUsers の更新リストを構築
@@ -413,13 +441,30 @@
             結果: {{ updated_allow_users | join(' ') }}
       when: existing_allow_users | length > 0
 
-    - name: sshd_config 本体の AllowUsers をコメントアウト（ドロップインに移行）
-      ansible.builtin.replace:
+    - name: sshd_config 本体の AllowUsers をコメントアウト
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^(\s*AllowUsers\s+.*)$'
-        replace: '# \1  # Moved to sshd_config.d/60-allow-users.conf by setup-trainees.yml'
-      register: sshd_config_main_changed
-      when: existing_allow_users | length > 0
+        line: '# \1  # Moved to sshd_config.d/60-allow-users.conf by setup-trainees.yml'
+        backrefs: true
+      register: sshd_main_commented
+      when:
+        - existing_allow_users | length > 0
+        - allowusers_main.rc == 0
+
+    - name: 他のドロップインファイルの AllowUsers をコメントアウト
+      ansible.builtin.lineinfile:
+        path: "{{ item.item.path }}"
+        regexp: '^(\s*AllowUsers\s+.*)$'
+        line: '# \1  # Moved to 60-allow-users.conf by setup-trainees.yml'
+        backrefs: true
+      loop: "{{ allowusers_dropins.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.path | basename }}"
+      register: sshd_dropins_commented
+      when:
+        - existing_allow_users | length > 0
+        - item.rc == 0
 
     - name: sshd AllowUsers を更新
       ansible.builtin.copy:
@@ -442,7 +487,9 @@
         state: reloaded
       when:
         - existing_allow_users | length > 0
-        - sshd_config_changed.changed or (sshd_config_main_changed.changed | default(false))
+        - (sshd_config_changed.changed | default(false))
+          or (sshd_main_commented.changed | default(false))
+          or (sshd_dropins_commented.changed | default(false))
 
     # =========================================================
     # Phase 11: 結果表示
