@@ -12,6 +12,7 @@
     credentials_dir: "{{ playbook_dir }}/../credentials"
     trainees_file: "{{ playbook_dir }}/../trainees.yml"
     allocate_script: /opt/airgap/scripts/allocate.py
+    sshd_allowusers_conf: /etc/ssh/sshd_config.d/60-allow-users.conf
 
   pre_tasks:
     - name: trainees リストを正規化（未定義・null を空リストに）
@@ -369,7 +370,82 @@
         mode: '0600'
 
     # =========================================================
-    # Phase 10: 結果表示
+    # Phase 10: sshd AllowUsers 管理
+    # =========================================================
+
+    - name: 既存の AllowUsers 設定を検索
+      ansible.builtin.shell: |
+        grep -rh '^\s*AllowUsers' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null \
+          | tail -1 || true
+      register: existing_allowusers_raw
+      changed_when: false
+
+    - name: 既存の AllowUsers ユーザーリストをパース
+      ansible.builtin.set_fact:
+        existing_allow_users: >-
+          {{
+            existing_allowusers_raw.stdout
+            | regex_replace('^\s*AllowUsers\s+', '')
+            | split
+            | select
+            | list
+            if existing_allowusers_raw.stdout | trim | length > 0
+            else []
+          }}
+
+    - name: AllowUsers の更新リストを構築
+      ansible.builtin.set_fact:
+        updated_allow_users: >-
+          {{
+            (existing_allow_users | difference(users_to_delete) | list
+             + desired_members)
+            | unique | sort
+          }}
+      when: existing_allow_users | length > 0
+
+    - name: AllowUsers 変更内容を表示
+      ansible.builtin.debug:
+        msg: |
+          AllowUsers 管理:
+            既存: {{ existing_allow_users | join(' ') }}
+            追加: {{ desired_members | difference(existing_allow_users) | join(', ') or 'なし' }}
+            削除: {{ users_to_delete | intersect(existing_allow_users) | join(', ') or 'なし' }}
+            結果: {{ updated_allow_users | join(' ') }}
+      when: existing_allow_users | length > 0
+
+    - name: sshd_config 本体の AllowUsers をコメントアウト（ドロップインに移行）
+      ansible.builtin.replace:
+        path: /etc/ssh/sshd_config
+        regexp: '^(\s*AllowUsers\s+.*)$'
+        replace: '# \1  # Moved to sshd_config.d/60-allow-users.conf by setup-trainees.yml'
+      register: sshd_config_main_changed
+      when: existing_allow_users | length > 0
+
+    - name: sshd AllowUsers を更新
+      ansible.builtin.copy:
+        dest: "{{ sshd_allowusers_conf }}"
+        mode: '0644'
+        content: |
+          # Managed by setup-trainees.yml — 手動で追加したユーザーも保持されます
+          AllowUsers {{ updated_allow_users | join(' ') }}
+      register: sshd_config_changed
+      when: existing_allow_users | length > 0
+
+    - name: AllowUsers 未設定のため sshd 変更をスキップ
+      ansible.builtin.debug:
+        msg: "AllowUsers が sshd に設定されていないため、変更をスキップしました"
+      when: existing_allow_users | length == 0
+
+    - name: sshd を再読み込み
+      ansible.builtin.systemd:
+        name: sshd
+        state: reloaded
+      when:
+        - existing_allow_users | length > 0
+        - sshd_config_changed.changed or (sshd_config_main_changed.changed | default(false))
+
+    # =========================================================
+    # Phase 11: 結果表示
     # =========================================================
 
     - name: 管理結果を表示
