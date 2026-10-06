@@ -25,9 +25,14 @@ airgap 環境に構築する場合は [構築ガイド](deployment-guide.md) を
 - 演習サーバーで RHSM のサブスクリプションが有効で、BaseOS / AppStream が使えること
   （`dnf repolist --enabled` に何か表示されること）
 - コントローラ（Ansible 実行マシン）もインターネットに到達できること
+- コントローラから演習サーバーに SSH で到達できること
 
 > UBI ベースイメージ（`registry.access.redhat.com/ubi10/ubi-init`）の pull に
 > サブスクリプションは不要です。
+
+> **KVM 検証環境での注意**: airgap 用の bastion（`airgap-training` ネットワーク）から
+> 非 airgap 用の VM（`training-nat` ネットワーク）には到達できません。
+> `make deploy-online-rhel` は KVM ホストから直接実行してください。
 
 ## 手順
 

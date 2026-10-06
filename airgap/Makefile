@@ -217,7 +217,16 @@ setup-online-vm: setup-online-network ## 非airgap 検証用 RHEL VM を作成�
 		echo "online-rhel-target: already exists"; \
 		sudo virsh start online-rhel-target 2>/dev/null || true; \
 	else \
-		cp $(BUNDLE)/vm-images/$(RHEL_QCOW2) /tmp/online-rhel-target.qcow2; \
+		if [ -f $(BUNDLE)/vm-images/$(RHEL_QCOW2) ]; then \
+			cp $(BUNDLE)/vm-images/$(RHEL_QCOW2) /tmp/online-rhel-target.qcow2; \
+		elif [ -f $(IMG_DIR)/$(RHEL_QCOW2) ]; then \
+			cp $(IMG_DIR)/$(RHEL_QCOW2) /tmp/online-rhel-target.qcow2; \
+		else \
+			echo "ERROR: $(RHEL_QCOW2) が見つかりません"; \
+			echo "  期待パス: $(BUNDLE)/vm-images/$(RHEL_QCOW2)"; \
+			echo "  または:   $(IMG_DIR)/$(RHEL_QCOW2)"; \
+			exit 1; \
+		fi; \
 		sudo virt-customize -a /tmp/online-rhel-target.qcow2 \
 			--root-password password:password --hostname online-rhel-target \
 			--run-command 'sed -i "s/#PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config' \

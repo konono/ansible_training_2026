@@ -24,7 +24,12 @@ ubi10_repo_dir: /opt/ubi10-repos
 ubi10_repo_enabled: true
 packages_dir: /opt/packages
 
-repo_server_ip: "{{ hostvars[groups['repo_server'][0]]['ansible_host'] if (groups['repo_server'] | default([])) | length > 0 else '' }}"
+repo_server_ip: >-
+  {%- set servers = groups.get('repo_server', []) -%}
+  {%- if servers | length > 0 -%}
+    {{ hostvars[servers[0]]['ansible_host'] }}
+  {%- else -%}
+  {%- endif -%}
 
 controller_image: "training-controller:latest"
 node_image: "training-linux-node:latest"

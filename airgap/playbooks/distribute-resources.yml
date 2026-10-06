@@ -117,6 +117,7 @@
   vars:
     bundle_dir: "{{ playbook_dir }}/../offline-resources"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
+    containers_src_dir: /opt/airgap-bundle/containers
 
   tasks:
     - name: バンドルディレクトリを作成

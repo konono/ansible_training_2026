@@ -33,11 +33,11 @@ fi
 MODE_ARGS=(
     -e "airgap_mode=$AIRGAP_MODE"
     -e "container_image_mode=$CONTAINER_IMAGE_MODE"
-    -e "container_image_registry=$CONTAINER_IMAGE_REGISTRY"
     -e "training_source_mode=$TRAINING_SOURCE_MODE"
-    -e "training_git_repo=$TRAINING_GIT_REPO"
-    -e "training_git_version=$TRAINING_GIT_VERSION"
 )
+[[ -n "$CONTAINER_IMAGE_REGISTRY" ]] && MODE_ARGS+=(-e "container_image_registry=$CONTAINER_IMAGE_REGISTRY")
+[[ -n "$TRAINING_GIT_REPO" ]]       && MODE_ARGS+=(-e "training_git_repo=$TRAINING_GIT_REPO")
+[[ -n "$TRAINING_GIT_VERSION" && "$TRAINING_GIT_VERSION" != "main" ]] && MODE_ARGS+=(-e "training_git_version=$TRAINING_GIT_VERSION")
 
 # 非airgap では inventory/hosts-online.yml を使う
 if [[ "$AIRGAP_MODE" == "true" ]]; then

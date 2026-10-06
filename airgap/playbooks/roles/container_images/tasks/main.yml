@@ -9,11 +9,18 @@
   register: existing_images
   changed_when: false
 
+- name: 既存イメージ名を正規化（localhost/ プレフィックスを除去）
+  ansible.builtin.set_fact:
+    normalized_images: >-
+      {{ existing_images.stdout_lines
+         | map('regex_replace', '^localhost/', '')
+         | list }}
+
 - name: 不足しているイメージを判定
   ansible.builtin.set_fact:
     missing_images: >-
       {{ [controller_image, node_image]
-         | reject('in', existing_images.stdout_lines)
+         | reject('in', normalized_images)
          | list }}
 
 - name: 調達するイメージを表示
@@ -116,9 +123,16 @@
   register: images_after
   changed_when: false
 
+- name: 調達後のイメージ名を正規化
+  ansible.builtin.set_fact:
+    normalized_images_after: >-
+      {{ images_after.stdout_lines
+         | map('regex_replace', '^localhost/', '')
+         | list }}
+
 - name: 必要なイメージが揃っていることを確認
   ansible.builtin.assert:
     that:
-      - controller_image in images_after.stdout_lines
-      - node_image in images_after.stdout_lines
-    fail_msg: "イメージの調達に失敗しました: {{ images_after.stdout_lines }}"
+      - controller_image in normalized_images_after
+      - node_image in normalized_images_after
+    fail_msg: "イメージの調達に失敗しました: {{ normalized_images_after }}"
