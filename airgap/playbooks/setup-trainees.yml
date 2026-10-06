@@ -413,6 +413,14 @@
             結果: {{ updated_allow_users | join(' ') }}
       when: existing_allow_users | length > 0
 
+    - name: sshd_config 本体の AllowUsers をコメントアウト（ドロップインに移行）
+      ansible.builtin.replace:
+        path: /etc/ssh/sshd_config
+        regexp: '^(\s*AllowUsers\s+.*)$'
+        replace: '# \1  # Moved to sshd_config.d/60-allow-users.conf by setup-trainees.yml'
+      register: sshd_config_main_changed
+      when: existing_allow_users | length > 0
+
     - name: sshd AllowUsers を更新
       ansible.builtin.copy:
         dest: "{{ sshd_allowusers_conf }}"
@@ -434,7 +442,7 @@
         state: reloaded
       when:
         - existing_allow_users | length > 0
-        - sshd_config_changed.changed
+        - sshd_config_changed.changed or (sshd_config_main_changed.changed | default(false))
 
     # =========================================================
     # Phase 11: 結果表示
