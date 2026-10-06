@@ -17,6 +17,35 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ALLOCATE_SCRIPT="$SCRIPT_DIR/scripts/allocate.py"
 
+# rhel-setup.yml が生成するデプロイモード設定を読み込む。
+# 無い場合は airgap（従来の挙動）とみなす。
+AIRGAP_MODE=true
+CONTAINER_IMAGE_MODE=build
+CONTAINER_IMAGE_REGISTRY=""
+TRAINING_SOURCE_MODE=archive
+TRAINING_GIT_REPO=""
+TRAINING_GIT_VERSION=main
+if [[ -f "$SCRIPT_DIR/deploy-mode.conf" ]]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/deploy-mode.conf"
+fi
+
+MODE_ARGS=(
+    -e "airgap_mode=$AIRGAP_MODE"
+    -e "container_image_mode=$CONTAINER_IMAGE_MODE"
+    -e "container_image_registry=$CONTAINER_IMAGE_REGISTRY"
+    -e "training_source_mode=$TRAINING_SOURCE_MODE"
+    -e "training_git_repo=$TRAINING_GIT_REPO"
+    -e "training_git_version=$TRAINING_GIT_VERSION"
+)
+
+# 非airgap では inventory/hosts-online.yml を使う
+if [[ "$AIRGAP_MODE" == "true" ]]; then
+    INVENTORY="${INVENTORY:-inventory/hosts.yml}"
+else
+    INVENTORY="${INVENTORY:-inventory/hosts-online.yml}"
+fi
+
 # --- ヘルプ ---
 show_usage() {
     cat << 'USAGE'
@@ -192,7 +221,7 @@ do_destroy_by_ip() {
     local ip="$1"
     echo "IP: $ip の環境を削除します。"
     echo ""
-    ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
+    ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/destroy-my-env.yml \
         -e "client_ip=$ip" \
         --limit rhel-target
 }
@@ -201,7 +230,7 @@ do_destroy_by_username() {
     local username="$1"
     echo "ユーザー: $username の環境を削除します。"
     echo ""
-    ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
+    ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/destroy-my-env.yml \
         -e "training_username=$username" \
         --limit rhel-target
 }
@@ -238,11 +267,11 @@ else:
     echo ""
 
     if [[ -n "$found_username" ]]; then
-        ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
+        ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/destroy-my-env.yml \
             -e "training_username=$found_username" \
             --limit rhel-target
     elif [[ -n "$found_ip" ]]; then
-        ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
+        ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/destroy-my-env.yml \
             -e "client_ip=$found_ip" \
             --limit rhel-target
     fi
@@ -272,7 +301,7 @@ for a in data['allocations']:
 
     for ip in $test_ips; do
         echo "=== 削除: $ip ==="
-        ansible-playbook -i inventory/hosts.yml playbooks/destroy-my-env.yml \
+        ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/destroy-my-env.yml \
             -e "client_ip=$ip" \
             --limit rhel-target
         echo ""
@@ -330,7 +359,7 @@ do_deploy_test() {
         local ip="198.51.100.$i"
         local name="test-user-$i"
         echo "=== [$i/$TEST_COUNT] IP=$ip, label=$name ==="
-        ansible-playbook -i inventory/hosts.yml playbooks/deploy-my-env.yml \
+        ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/deploy-my-env.yml \
             -e "client_ip=$ip" \
             -e "client_hostname=$name" \
             --limit rhel-target
@@ -369,7 +398,7 @@ do_deploy() {
     echo "受講者名: $CLIENT_LABEL"
     echo ""
 
-    ansible-playbook -i inventory/hosts.yml playbooks/deploy-my-env.yml \
+    ansible-playbook -i "$INVENTORY" "${MODE_ARGS[@]}" playbooks/deploy-my-env.yml \
         -e "training_username=$current_user" \
         -e "client_hostname=$CLIENT_LABEL" \
         --limit rhel-target

@@ -4,3 +4,9 @@ node_image: "training-linux-node:latest"
 container_images_dir: /opt/airgap-bundle/container-images
 training_archive: /opt/airgap-bundle/training-materials/ansible_training_2026.tar.gz
 allocate_script: /opt/airgap/scripts/allocate.py
+# 非airgap の container_image_mode=build で使う Containerfile の配置先
+containers_src_dir: /opt/airgap-bundle/containers
+airgap_mode: true
+training_source_mode: archive
+training_git_repo: ""
+training_git_version: main

@@ -1,0 +1,13 @@
+---
+# デプロイモード既定値（未指定なら従来どおり airgap 動作）
+airgap_mode: true
+
+# コンテナイメージの調達方法: build（Containerfile からビルド）/ pull（レジストリから取得）
+container_image_mode: build
+container_image_registry: ""
+containers_src_dir: /opt/airgap-bundle/containers
+
+# 研修資材の取得方法: archive / git
+training_source_mode: archive
+training_git_repo: ""
+training_git_version: main

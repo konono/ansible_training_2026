@@ -1,4 +1,15 @@
 ---
+# デプロイモードを決める変数（airgap_mode / container_image_mode /
+# training_source_mode など）は、ここではなく inventory 側で指定すること。
+# このファイルは各 playbook の vars_files で読み込まれており、
+# vars_files は inventory 変数より優先順位が高いため、ここに書くと
+# inventory/hosts-online.yml の設定を上書きしてしまう。
+#
+#   airgap   : inventory/hosts.yml        （airgap_mode: true、既定）
+#   非airgap : inventory/hosts-online.yml （airgap_mode: false）
+#
+# 既定値は各ロールの defaults/main.yml にある（未指定なら airgap 動作）。
+
 # RHEL VM バージョン設定 — rhel-version.conf と同期すること
 rhel_version: "9.4"
 rhel_major: "{{ rhel_version.split('.')[0] }}"

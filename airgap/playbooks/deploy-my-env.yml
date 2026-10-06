@@ -28,13 +28,15 @@
         - client_ip is match('^198\\.51\\.100\\.')
         - training_username is not defined or training_username | length == 0
 
-    - name: repo_server_ip が設定されていることを確認
+    - name: repo_server_ip が設定されていることを確認（airgap のみ）
       ansible.builtin.assert:
         that:
           - repo_server_ip | default('') | length > 0
         fail_msg: >
           repo_server_ip が未設定です。インベントリに repo_server グループが
           含まれていることを確認してください。
+          非airgap 環境では airgap_mode=false を指定してください。
+      when: airgap_mode | default(true) | bool
 
     - name: 採番スクリプトの存在を確認
       ansible.builtin.stat:

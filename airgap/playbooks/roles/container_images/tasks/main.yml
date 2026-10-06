@@ -1,0 +1,124 @@
+---
+# 研修用コンテナイメージを用意する。
+#   airgap_mode=true  : バンドルの tar から podman load
+#   airgap_mode=false : Containerfile から build、または registry から pull
+# 冪等性のため、既に同名イメージがあれば何もしない。
+
+- name: 既存イメージ一覧を取得
+  ansible.builtin.command: podman images --format "{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}"
+  register: existing_images
+  changed_when: false
+
+- name: 不足しているイメージを判定
+  ansible.builtin.set_fact:
+    missing_images: >-
+      {{ [controller_image, node_image]
+         | reject('in', existing_images.stdout_lines)
+         | list }}
+
+- name: 調達するイメージを表示
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'イメージは全て存在します（スキップ）' if missing_images | length == 0
+         else '調達対象: ' + (missing_images | join(', '))
+              + ' / 方式: ' + ('podman load (airgap)' if airgap_mode | bool else 'podman ' + container_image_mode) }}
+
+# --- airgap: バンドル tar からロード ---
+- name: バンドルのイメージ tar をロード
+  ansible.builtin.command:
+    cmd: "podman load -i {{ container_images_dir }}/{{ item.tar }}"
+  loop:
+    - { image: "{{ controller_image }}", tar: training-controller.tar }
+    - { image: "{{ node_image }}", tar: training-linux-node.tar }
+  loop_control:
+    label: "{{ item.tar }}"
+  when:
+    - airgap_mode | bool
+    - item.image in missing_images
+  changed_when: true
+
+# --- 非airgap: Containerfile からビルド ---
+- name: Containerfile が配置されていることを確認
+  ansible.builtin.stat:
+    path: "{{ containers_src_dir }}/controller/Containerfile"
+  register: containerfile_check
+  when:
+    - not (airgap_mode | bool)
+    - container_image_mode == 'build'
+    - missing_images | length > 0
+
+- name: Containerfile が無い場合はエラー
+  ansible.builtin.fail:
+    msg: >-
+      {{ containers_src_dir }}/controller/Containerfile が見つかりません。
+      distribute-resources.yml を先に実行して containers/ を配置してください。
+  when:
+    - not (airgap_mode | bool)
+    - container_image_mode == 'build'
+    - missing_images | length > 0
+    - not (containerfile_check.stat.exists | default(false))
+
+- name: コンテナイメージをビルド
+  ansible.builtin.command:
+    cmd: >-
+      podman build -t {{ item.image }}
+      -f {{ containers_src_dir }}/{{ item.dir }}/Containerfile
+      {{ containers_src_dir }}/{{ item.dir }}
+  loop:
+    - { image: "{{ controller_image }}", dir: controller }
+    - { image: "{{ node_image }}", dir: linux }
+  loop_control:
+    label: "{{ item.image }}"
+  when:
+    - not (airgap_mode | bool)
+    - container_image_mode == 'build'
+    - item.image in missing_images
+  changed_when: true
+
+# --- 非airgap: レジストリから pull ---
+- name: container_image_registry が設定されていることを確認
+  ansible.builtin.assert:
+    that:
+      - container_image_registry | default('') | length > 0
+    fail_msg: >-
+      container_image_mode=pull には container_image_registry の指定が必要です。
+  when:
+    - not (airgap_mode | bool)
+    - container_image_mode == 'pull'
+    - missing_images | length > 0
+
+- name: レジストリからイメージを pull
+  ansible.builtin.command:
+    cmd: "podman pull {{ container_image_registry }}/{{ item }}"
+  changed_when: true
+  loop:
+    - "{{ controller_image }}"
+    - "{{ node_image }}"
+  when:
+    - not (airgap_mode | bool)
+    - container_image_mode == 'pull'
+    - item in missing_images
+
+- name: pull したイメージにローカルタグを付与
+  ansible.builtin.command:
+    cmd: "podman tag {{ container_image_registry }}/{{ item }} {{ item }}"
+  loop:
+    - "{{ controller_image }}"
+    - "{{ node_image }}"
+  when:
+    - not (airgap_mode | bool)
+    - container_image_mode == 'pull'
+    - item in missing_images
+  changed_when: true
+
+- name: 調達後のイメージを確認
+  ansible.builtin.command: podman images --format "{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}"
+  register: images_after
+  changed_when: false
+
+- name: 必要なイメージが揃っていることを確認
+  ansible.builtin.assert:
+    that:
+      - controller_image in images_after.stdout_lines
+      - node_image in images_after.stdout_lines
+    fail_msg: "イメージの調達に失敗しました: {{ images_after.stdout_lines }}"

@@ -35,28 +35,10 @@
     user_training_dir: "/opt/training/user{{ alloc.user_id }}/ansible_training_2026"
     user_ssh_port: "{{ alloc.ssh_port }}"
 
-# --- コンテナイメージのロード（初回のみ）---
-- name: コントローライメージの存在確認
-  ansible.builtin.shell: podman images --format "{% raw %}{{.Repository}}{% endraw %}" | grep -q training-controller
-  register: ctrl_image_check
-  changed_when: false
-  failed_when: false
-
-- name: コントローライメージをロード
-  ansible.builtin.command:
-    cmd: podman load -i {{ container_images_dir }}/training-controller.tar
-  when: ctrl_image_check.rc != 0
-
-- name: ノードイメージの存在確認
-  ansible.builtin.shell: podman images --format "{% raw %}{{.Repository}}{% endraw %}" | grep -q training-linux-node
-  register: node_image_check
-  changed_when: false
-  failed_when: false
-
-- name: Linuxノードイメージをロード
-  ansible.builtin.command:
-    cmd: podman load -i {{ container_images_dir }}/training-linux-node.tar
-  when: node_image_check.rc != 0
+# --- コンテナイメージの調達（初回のみ）---
+- name: コンテナイメージを調達
+  ansible.builtin.include_role:
+    name: container_images
 
 # --- 研修資材の展開 ---
 - name: ユーザーディレクトリを作成
@@ -65,12 +47,23 @@
     state: directory
     mode: '0755'
 
-- name: 研修資材を展開
+- name: 研修資材を展開（archive）
   ansible.builtin.unarchive:
     src: "{{ training_archive }}"
     dest: "/opt/training/user{{ user_id }}"
     remote_src: true
     creates: "{{ user_training_dir }}/README.md"
+  when: training_source_mode == 'archive'
+
+- name: 研修資材を git clone（非airgap / training_source_mode=git）
+  ansible.builtin.git:
+    repo: "{{ training_git_repo }}"
+    dest: "{{ user_training_dir }}"
+    version: "{{ training_git_version }}"
+    update: false
+  when:
+    - training_source_mode == 'git'
+    - not (airgap_mode | bool)
 
 - name: workspace ディレクトリを作成
   ansible.builtin.file:
@@ -112,7 +105,8 @@
     timeout: 120
     state: started
 
-# --- コンテナ内リポジトリ設定 ---
+# --- コンテナ内リポジトリ設定（airgap のみ）---
+# 非airgap では UBI イメージ既定の ubi.repo が Red Hat CDN を参照するため上書き不要。
 - name: コンテナ内リポジトリ設定
   ansible.builtin.shell: |
     changed=false
@@ -144,6 +138,7 @@
     echo "CHANGED=$changed"
   register: repo_config
   changed_when: "'CHANGED=true' in repo_config.stdout"
+  when: airgap_mode | bool
 
 # --- ステータス更新 ---
 - name: allocations を active に更新

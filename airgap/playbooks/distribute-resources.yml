@@ -1,5 +1,56 @@
 ---
-- name: リポジトリサーバーへのリソース配置
+# コントローラから各ホストへリソースを配布する。
+#   airgap_mode=true  : offline-resources/ のバンドル一式（ISO・イメージ tar・pip 等）
+#   airgap_mode=false : 研修資材と Containerfile のみ（他はインターネットから取得）
+
+- name: 研修資材アーカイブを準備（コントローラ側）
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  vars:
+    bundle_dir: "{{ playbook_dir }}/../offline-resources"
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: 既存の研修資材アーカイブを確認
+      ansible.builtin.stat:
+        path: "{{ bundle_dir }}/training-materials/ansible_training_2026.tar.gz"
+      register: materials_archive
+
+    - name: 研修資材ディレクトリを作成
+      ansible.builtin.file:
+        path: "{{ bundle_dir }}/training-materials"
+        state: directory
+        mode: '0755'
+      when:
+        - not (airgap_mode | default(true) | bool)
+        - training_source_mode | default('archive') == 'archive'
+        - not materials_archive.stat.exists
+
+    # 非airgap ではバンドルを作らずに運用することが多いため、
+    # 手元のリポジトリから研修資材アーカイブをその場で生成する。
+    # prepare-offline-bundle.sh の Phase 6 と同じアーカイブ構造
+    # （トップレベルが ansible_training_2026/ になる）を再現する。
+    # noqa command-instead-of-module
+    # unarchive は展開専用。--transform でトップレベル名を固定する必要があるため tar を直接使う。
+    - name: 研修資材アーカイブを生成（非airgap）
+      ansible.builtin.command:
+        cmd: >-
+          tar czf {{ bundle_dir }}/training-materials/ansible_training_2026.tar.gz
+          --exclude=.git --exclude=.tracecraft --exclude=airgap/offline-resources
+          --transform=s,^,ansible_training_2026/,
+          -C {{ repo_root }} .
+        creates: "{{ bundle_dir }}/training-materials/ansible_training_2026.tar.gz"
+      when:
+        - not (airgap_mode | default(true) | bool)
+        - training_source_mode | default('archive') == 'archive'
+
+- name: リポジトリサーバーへのリソース配置（airgap のみ）
   hosts: repo_server
   become: true
   gather_facts: false
@@ -11,53 +62,61 @@
     bundle_dir: "{{ playbook_dir }}/../offline-resources"
 
   tasks:
-    - name: DVD ISO の存在を確認
-      ansible.builtin.stat:
-        path: "{{ rhel_installer_iso }}"
-        get_checksum: false
-      register: iso_dest
+    - name: airgap バンドルを配置
+      when: airgap_mode | default(true) | bool
+      block:
+        - name: DVD ISO の存在を確認
+          ansible.builtin.stat:
+            path: "{{ rhel_installer_iso }}"
+            get_checksum: false
+          register: iso_dest
 
-    - name: DVD ISO を配置
-      ansible.builtin.copy:
-        src: "{{ bundle_dir }}/iso/{{ rhel_iso_filename }}"
-        dest: "{{ rhel_installer_iso }}"
-        mode: '0644'
-      when: not iso_dest.stat.exists
+        - name: DVD ISO を配置
+          ansible.builtin.copy:
+            src: "{{ bundle_dir }}/iso/{{ rhel_iso_filename }}"
+            dest: "{{ rhel_installer_iso }}"
+            mode: '0644'
+          when: not iso_dest.stat.exists
 
-    - name: パッケージディレクトリを作成
-      ansible.builtin.file:
-        path: /opt/airgap-bundle/packages
-        state: directory
-        mode: '0755'
+        - name: パッケージディレクトリを作成
+          ansible.builtin.file:
+            path: /opt/airgap-bundle/packages
+            state: directory
+            mode: '0755'
 
-    - name: Windows パッケージを配置
-      ansible.builtin.copy:
-        src: "{{ bundle_dir }}/packages/"
-        dest: /opt/airgap-bundle/packages/
-        mode: '0644'
+        - name: Windows パッケージを配置
+          ansible.builtin.copy:
+            src: "{{ bundle_dir }}/packages/"
+            dest: /opt/airgap-bundle/packages/
+            mode: '0644'
 
-    - name: UBI 10 ミラーリポジトリの存在を確認
-      ansible.builtin.stat:
-        path: "{{ bundle_dir }}/ubi10-repos/BaseOS"
-      register: ubi10_local_check
-      delegate_to: localhost
-      become: false
+        - name: UBI 10 ミラーリポジトリの存在を確認
+          ansible.builtin.stat:
+            path: "{{ bundle_dir }}/ubi10-repos/BaseOS"
+          register: ubi10_local_check
+          delegate_to: localhost
+          become: false
 
-    - name: UBI 10 ミラーリポジトリを配置
-      ansible.builtin.copy:
-        src: "{{ bundle_dir }}/ubi10-repos/"
-        dest: /opt/airgap-bundle/ubi10-repos/
-        directory_mode: '0755'
-        mode: '0644'
-      when: ubi10_local_check.stat.exists | default(false)
+        - name: UBI 10 ミラーリポジトリを配置
+          ansible.builtin.copy:
+            src: "{{ bundle_dir }}/ubi10-repos/"
+            dest: /opt/airgap-bundle/ubi10-repos/
+            directory_mode: '0755'
+            mode: '0644'
+          when: ubi10_local_check.stat.exists | default(false)
 
 - name: Linux 演習サーバーへのリソース配置
   hosts: rhel
   become: true
   gather_facts: false
 
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/rhel.yml
+
   vars:
     bundle_dir: "{{ playbook_dir }}/../offline-resources"
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
     - name: バンドルディレクトリを作成
@@ -71,29 +130,46 @@
         - training-materials
         - pip-packages
 
-    - name: コンテナイメージを配置
+    # --- airgap 専用のリソース ---
+    - name: airgap 専用リソースを配置
+      when: airgap_mode | default(true) | bool
+      block:
+        - name: コンテナイメージを配置
+          ansible.builtin.copy:
+            src: "{{ bundle_dir }}/container-images/{{ item }}"
+            dest: /opt/airgap-bundle/container-images/
+            mode: '0644'
+          loop:
+            - training-controller.tar
+            - training-linux-node.tar
+
+        - name: docker-compose バイナリを配置
+          ansible.builtin.copy:
+            src: "{{ bundle_dir }}/binaries/docker-compose-linux-x86_64"
+            dest: /opt/airgap-bundle/binaries/docker-compose-linux-x86_64
+            mode: '0755'
+
+        - name: pip パッケージを配置
+          ansible.builtin.copy:
+            src: "{{ bundle_dir }}/pip-packages/"
+            dest: /opt/airgap-bundle/pip-packages/
+            mode: '0644'
+
+    # --- 非airgap: Containerfile を配置してサーバー上でビルドする ---
+    - name: Containerfile を配置（非airgap / build モード）
       ansible.builtin.copy:
-        src: "{{ bundle_dir }}/container-images/{{ item }}"
-        dest: /opt/airgap-bundle/container-images/
+        src: "{{ repo_root }}/containers/"
+        dest: "{{ containers_src_dir }}/"
         mode: '0644'
-      loop:
-        - training-controller.tar
-        - training-linux-node.tar
+        directory_mode: '0755'
+      when:
+        - not (airgap_mode | default(true) | bool)
+        - container_image_mode | default('build') == 'build'
 
-    - name: docker-compose バイナリを配置
-      ansible.builtin.copy:
-        src: "{{ bundle_dir }}/binaries/docker-compose-linux-x86_64"
-        dest: /opt/airgap-bundle/binaries/docker-compose-linux-x86_64
-        mode: '0755'
-
+    # --- 研修資材は両モード共通（git モードを除く）---
     - name: 研修資材を配置
       ansible.builtin.copy:
         src: "{{ bundle_dir }}/training-materials/"
         dest: /opt/airgap-bundle/training-materials/
         mode: '0644'
-
-    - name: pip パッケージを配置
-      ansible.builtin.copy:
-        src: "{{ bundle_dir }}/pip-packages/"
-        dest: /opt/airgap-bundle/pip-packages/
-        mode: '0644'
+      when: training_source_mode | default('archive') == 'archive'

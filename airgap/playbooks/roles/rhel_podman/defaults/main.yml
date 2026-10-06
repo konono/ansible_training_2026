@@ -1,0 +1,8 @@
+---
+# デプロイモード既定値（未指定なら従来どおり airgap 動作）
+airgap_mode: true
+
+# 非airgap で docker-compose を取得する際の入手元
+docker_compose_version: "v2.29.7"
+docker_compose_url: >-
+  https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64

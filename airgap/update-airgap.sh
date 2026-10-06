@@ -15,10 +15,22 @@
 #   ./update-airgap.sh 192.168.100.2 mypass
 #   ./update-airgap.sh --create-tar        # tar 作成のみ（USB 等で持ち込む用）
 
+#   AIRGAP_MODE=false ./update-airgap.sh        # 非airgap 環境（offline-resources/ 不要）
+#
+# 非airgap 環境では offline-resources/ が存在しないのが正常なため、
+# AIRGAP_MODE=false を指定すると不在チェックの警告を出さない。
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEST_DIR="/opt/airgap"
+AIRGAP_MODE="${AIRGAP_MODE:-true}"
+# Step 8 のコード同期で使うインベントリ（非airgap では hosts-online.yml が既定）
+if [[ "$AIRGAP_MODE" == "true" ]]; then
+    INVENTORY_FILE="${INVENTORY_FILE:-inventory/hosts.yml}"
+else
+    INVENTORY_FILE="${INVENTORY_FILE:-inventory/hosts-online.yml}"
+fi
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 RED='\033[0;31m'
@@ -202,8 +214,10 @@ fi
 OFFLINE_EXISTS=$(run_cmd "test -d ${DEST_DIR}/offline-resources && echo yes || echo no")
 if [[ "$OFFLINE_EXISTS" == "yes" ]]; then
     log_info "offline-resources/ を検出 — 保持します"
-else
+elif [[ "$AIRGAP_MODE" == "true" ]]; then
     log_warn "offline-resources/ が見つかりません（初回デプロイが未完了の可能性）"
+else
+    log_info "offline-resources/ はありません（AIRGAP_MODE=false のため不要）"
 fi
 
 echo ""
@@ -358,8 +372,8 @@ VERIFY_RESULT=$(run_cmd "
         WARNINGS=\$((WARNINGS + 1))
     fi
 
-    # offline-resources の確認
-    if [[ ! -d ${DEST_DIR}/offline-resources ]]; then
+    # offline-resources の確認（非airgap では不要なためスキップ）
+    if [[ '${AIRGAP_MODE}' == 'true' ]] && [[ ! -d ${DEST_DIR}/offline-resources ]]; then
         echo 'WARN: offline-resources/ が見つかりません'
         WARNINGS=\$((WARNINGS + 1))
     fi
@@ -399,7 +413,7 @@ log_info "Step 8: training サーバーへのコード同期"
 SYNC_TRAINING=$(run_cmd "
     if ! command -v ansible-playbook >/dev/null 2>&1; then
         echo 'no_ansible'
-    elif [[ ! -f ${DEST_DIR}/inventory/hosts.yml ]]; then
+    elif [[ ! -f ${DEST_DIR}/${INVENTORY_FILE} ]]; then
         echo 'no_inventory'
     else
         echo 'ready'
@@ -414,7 +428,7 @@ if [[ "$SYNC_TRAINING" == "ready" ]]; then
 
     SYNC_RESULT=$(run_cmd "
         cd ${DEST_DIR}
-        ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml \
+        ansible-playbook -i ${INVENTORY_FILE} playbooks/rhel-setup.yml \
             --tags sync-code \
             2>&1
         echo \"EXIT_CODE=\$?\"
@@ -427,16 +441,16 @@ if [[ "$SYNC_TRAINING" == "ready" ]]; then
         log_warn "training サーバーへの同期でエラーが発生しました"
         log_warn "手動で再実行してください:"
         log_warn "  cd ${DEST_DIR}"
-        log_warn "  ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml --tags sync-code"
+        log_warn "  ansible-playbook -i ${INVENTORY_FILE} playbooks/rhel-setup.yml --tags sync-code"
         echo ""
         echo "$SYNC_RESULT" | tail -15
     fi
 elif [[ "$SYNC_TRAINING" == "no_ansible" ]]; then
     log_warn "ansible-playbook が見つかりません — training サーバーへの同期はスキップ"
     log_warn "bastion で setup-controller.sh を実行後、手動で同期してください:"
-    log_warn "  ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml --tags sync-code"
+    log_warn "  ansible-playbook -i ${INVENTORY_FILE} playbooks/rhel-setup.yml --tags sync-code"
 else
-    log_warn "inventory/hosts.yml が見つかりません — training サーバーへの同期はスキップ"
+    log_warn "${INVENTORY_FILE} が見つかりません — training サーバーへの同期はスキップ"
 fi
 
 echo ""
