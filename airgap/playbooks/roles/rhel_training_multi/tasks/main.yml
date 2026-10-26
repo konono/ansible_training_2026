@@ -120,15 +120,15 @@
         sed -i "s/enabled *= *1/enabled=0/g" /etc/yum.repos.d/ubi.repo 2>/dev/null
         cat > /etc/yum.repos.d/airgap-baseos.repo << REPO
     [airgap-baseos]
-    name=Airgap BaseOS
-    baseurl=http://{{ repo_server_ip }}/repo/BaseOS
+    name=Airgap UBI10 BaseOS
+    baseurl=http://{{ repo_server_ip }}/ubi10/BaseOS
     enabled=1
     gpgcheck=0
     REPO
         cat > /etc/yum.repos.d/airgap-appstream.repo << REPO
     [airgap-appstream]
-    name=Airgap AppStream
-    baseurl=http://{{ repo_server_ip }}/repo/AppStream
+    name=Airgap UBI10 AppStream
+    baseurl=http://{{ repo_server_ip }}/ubi10/AppStream
     enabled=1
     gpgcheck=0
     REPO
