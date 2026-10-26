@@ -61,6 +61,23 @@
     mode: '0644'
   tags: sync-code
 
+# 受講者が実行する deploy-training.sh は group_vars/all.yml の既定値
+# （airgap_mode: true）を読む。実際にどのモードでデプロイしたかをここに
+# 書き出し、deploy-training.sh から -e で渡すことでモードを引き継ぐ。
+- name: デプロイモード設定を配置
+  ansible.builtin.copy:
+    dest: /opt/airgap/deploy-mode.conf
+    mode: '0644'
+    content: |
+      # rhel-setup.yml が生成。手で編集しないこと。
+      AIRGAP_MODE={{ 'true' if airgap_mode | bool else 'false' }}
+      CONTAINER_IMAGE_MODE={{ container_image_mode | default('build') }}
+      CONTAINER_IMAGE_REGISTRY={{ container_image_registry | default('') }}
+      TRAINING_SOURCE_MODE={{ training_source_mode | default('archive') }}
+      TRAINING_GIT_REPO={{ training_git_repo | default('') }}
+      TRAINING_GIT_VERSION={{ training_git_version | default('main') }}
+  tags: sync-code
+
 - name: Python バージョンを確認
   ansible.builtin.command: python3 --version
   register: python3_version
@@ -112,40 +129,62 @@
   environment:
     PATH: "{{ pip_script_dir.stdout }}:{{ ansible_facts['env']['PATH'] }}"
 
-- name: ansible-core をオフラインインストール
+- name: ansible-core をオフラインインストール（airgap）
   ansible.builtin.pip:
     name: ansible-core
     extra_args: "--no-index --find-links={{ bundle_staging_dir }}/pip-packages/"
     executable: "{{ pip_executable }}"
-  when: ansible_check.rc != 0
+  when:
+    - ansible_check.rc != 0
+    - airgap_mode | bool
 
-- name: Ansible コレクションを配置
+- name: ansible-core を PyPI からインストール（非airgap）
+  ansible.builtin.pip:
+    name: ansible-core
+    executable: "{{ pip_executable }}"
+  when:
+    - ansible_check.rc != 0
+    - not (airgap_mode | bool)
+
+- name: Ansible コレクションを配置（airgap）
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../offline-resources/ansible-collections/"
     dest: /opt/airgap/offline-resources/ansible-collections/
     mode: '0644'
+  when: airgap_mode | bool
 
-- name: Ansible コレクションをインストール
+- name: Ansible コレクションをインストール（airgap）
   ansible.builtin.shell: |
     for f in /opt/airgap/offline-resources/ansible-collections/*.tar.gz; do
       ansible-galaxy collection install "$f" --force
     done
-  when: ansible_check.rc != 0
+  when:
+    - ansible_check.rc != 0
+    - airgap_mode | bool
   changed_when: true
   environment:
     PATH: "{{ pip_script_dir.stdout }}:{{ ansible_facts['env']['PATH'] }}"
 
-- name: コントローライメージをロード
-  ansible.builtin.command:
-    cmd: podman load -i {{ container_images_dir }}/training-controller.tar
-  register: controller_load
-  changed_when: "'Loaded image' in controller_load.stdout"
+- name: requirements.yml を配置（非airgap）
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../requirements.yml"
+    dest: /opt/airgap/requirements.yml
+    mode: '0644'
+  when: not (airgap_mode | bool)
 
-- name: Linuxノードイメージをロード
+- name: Ansible コレクションを Galaxy からインストール（非airgap）
   ansible.builtin.command:
-    cmd: podman load -i {{ container_images_dir }}/training-linux-node.tar
-  register: node_load
-  changed_when: "'Loaded image' in node_load.stdout"
+    cmd: ansible-galaxy collection install -r /opt/airgap/requirements.yml
+  when:
+    - ansible_check.rc != 0
+    - not (airgap_mode | bool)
+  changed_when: true
+  environment:
+    PATH: "{{ pip_script_dir.stdout }}:{{ ansible_facts['env']['PATH'] }}"
+
+- name: コンテナイメージを調達
+  ansible.builtin.include_role:
+    name: container_images
 
 - name: ロード済みイメージを確認
   ansible.builtin.command: podman images

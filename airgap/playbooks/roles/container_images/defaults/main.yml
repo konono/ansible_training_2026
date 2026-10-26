@@ -1,0 +1,9 @@
+---
+# コンテナイメージ調達の既定値
+airgap_mode: true
+container_image_mode: build
+container_image_registry: ""
+container_images_dir: /opt/airgap-bundle/container-images
+containers_src_dir: /opt/airgap-bundle/containers
+controller_image: "training-controller:latest"
+node_image: "training-linux-node:latest"

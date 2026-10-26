@@ -14,12 +14,42 @@ log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
+# --- モード判定 ---
+# --online / AIRGAP_MODE=false で非airgap（インターネット接続あり）モードになる。
+AIRGAP_MODE="${AIRGAP_MODE:-true}"
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --online)  AIRGAP_MODE=false ;;
+        --airgap)  AIRGAP_MODE=true ;;
+        -h|--help)
+            echo "使用方法: $0 [--online|--airgap] [/path/to/rhel-x.y-dvd.iso]"
+            echo ""
+            echo "  --airgap  (既定) 閉域環境。DVD ISO とオフラインバンドルから構築する。"
+            echo "  --online        インターネット接続あり。RHSM/CDN・PyPI・Galaxy から取得する。"
+            exit 0
+            ;;
+        *) ARGS+=("$arg") ;;
+    esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
 echo "============================================"
-echo "  Airgap コントローラノード セットアップ"
+if [[ "$AIRGAP_MODE" == "true" ]]; then
+    echo "  Airgap コントローラノード セットアップ"
+else
+    echo "  コントローラノード セットアップ（非airgap）"
+fi
 echo "============================================"
 echo ""
-echo "このスクリプトは ansible-playbook を実行するマシンを"
-echo "airgap 環境でセットアップします。"
+if [[ "$AIRGAP_MODE" == "true" ]]; then
+    echo "このスクリプトは ansible-playbook を実行するマシンを"
+    echo "airgap 環境でセットアップします。"
+else
+    echo "このスクリプトは ansible-playbook を実行するマシンを"
+    echo "インターネット接続のある環境でセットアップします。"
+    echo "DVD ISO とオフラインバンドルは不要です。"
+fi
 echo ""
 
 if [[ $EUID -eq 0 ]]; then
@@ -46,6 +76,16 @@ else
 fi
 
 # --- Step 1: DVD ISO からローカルリポジトリを設定 ---
+if [[ "$AIRGAP_MODE" != "true" ]]; then
+    log_info "Step 1: 既存の dnf リポジトリを使用（ISO セットアップをスキップ）"
+    if ! dnf repolist --enabled 2>/dev/null | tail -n +2 | grep -q .; then
+        log_error "有効な dnf リポジトリがありません。"
+        log_error "subscription-manager register などでリポジトリを有効化してください。"
+        exit 1
+    fi
+    log_info "有効なリポジトリ: $(dnf repolist --enabled 2>/dev/null | tail -n +2 | wc -l) 件"
+    echo ""
+else
 log_info "Step 1: DVD ISO からローカルリポジトリを設定"
 
 ISO_PATH="${1:-}"
@@ -101,6 +141,7 @@ EOF
 $SUDO dnf clean all >/dev/null 2>&1
 log_info "ローカルリポジトリ設定完了"
 echo ""
+fi
 
 # --- Step 2: 前提パッケージのインストール ---
 log_info "Step 2: 前提パッケージのインストール"
@@ -146,7 +187,13 @@ if command -v ansible >/dev/null 2>&1; then
     log_info "ansible は既にインストール済みです"
     ansible --version | head -1
 else
-    if [[ -d "$BUNDLE_DIR/pip-packages" ]]; then
+    if [[ "$AIRGAP_MODE" != "true" ]]; then
+        log_info "PyPI からインストールします"
+        if ! $SUDO $PYTHON_CMD -m pip install ansible-core 2>&1 | tail -3; then
+            log_error "ansible-core のインストールに失敗しました"
+            exit 1
+        fi
+    elif [[ -d "$BUNDLE_DIR/pip-packages" ]]; then
         log_info "バンドルの pip パッケージからインストールします"
         if ! $SUDO $PYTHON_CMD -m pip install --no-index --find-links="$BUNDLE_DIR/pip-packages/" \
             ansible-core 2>&1; then
@@ -177,6 +224,14 @@ log_info "Step 4: sshpass のインストール"
 if command -v sshpass >/dev/null 2>&1; then
     log_info "sshpass は既にインストール済みです"
     sshpass -V 2>&1 | head -1
+elif [[ "$AIRGAP_MODE" != "true" ]]; then
+    log_info "dnf でインストールします"
+    if $SUDO dnf install -y sshpass 2>&1 | tail -3; then
+        log_info "sshpass インストール完了"
+    else
+        log_warn "sshpass の dnf インストールに失敗しました（EPEL が必要な場合があります）"
+        log_warn "パスワード認証を使う場合は手動でインストールしてください"
+    fi
 else
     SSHPASS_TAR="$BUNDLE_DIR/binaries/sshpass-1.10.tar.gz"
     if [[ -f "$SSHPASS_TAR" ]]; then
@@ -203,7 +258,14 @@ echo ""
 # --- Step 5: Ansible コレクションのインストール ---
 log_info "Step 5: Ansible コレクションのインストール"
 COLLECTIONS_DIR="$BUNDLE_DIR/ansible-collections"
-if [[ -d "$COLLECTIONS_DIR" ]]; then
+if [[ "$AIRGAP_MODE" != "true" ]]; then
+    log_info "Ansible Galaxy からインストールします"
+    if ! ansible-galaxy collection install -r "$SCRIPT_DIR/requirements.yml" 2>&1 | tail -5; then
+        log_error "コレクションのインストールに失敗しました"
+        exit 1
+    fi
+    log_info "コレクションのインストール完了"
+elif [[ -d "$COLLECTIONS_DIR" ]]; then
     for col in ansible-posix ansible-windows community-general community-windows; do
         tarball=$(ls "$COLLECTIONS_DIR"/${col}-*.tar.gz 2>/dev/null | head -1)
         if [[ -n "$tarball" ]]; then
@@ -261,11 +323,20 @@ if [[ "$SETUP_OK" == "true" ]]; then
     echo "  2. Playbook を順番に実行:"
     echo "     cd $(pwd)"
     echo '     SSH_ARGS='"'"'-e ansible_ssh_common_args="-o StrictHostKeyChecking=no"'"'"''
-    echo '     ansible-playbook -i inventory/hosts.yml playbooks/distribute-resources.yml $SSH_ARGS'
-    echo '     ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml $SSH_ARGS'
-    echo '     ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml $SSH_ARGS'
-    echo ""
-    echo "詳細は docs/deployment-guide.md を参照してください。"
+    if [[ "$AIRGAP_MODE" == "true" ]]; then
+        echo '     ansible-playbook -i inventory/hosts.yml playbooks/distribute-resources.yml $SSH_ARGS'
+        echo '     ansible-playbook -i inventory/hosts.yml playbooks/repo-server-setup.yml $SSH_ARGS'
+        echo '     ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml $SSH_ARGS'
+        echo ""
+        echo "詳細は docs/deployment-guide.md を参照してください。"
+    else
+        echo '     ansible-playbook -i inventory/hosts-online.yml playbooks/distribute-resources.yml $SSH_ARGS'
+        echo '     ansible-playbook -i inventory/hosts-online.yml playbooks/rhel-setup.yml $SSH_ARGS'
+        echo ""
+        echo "  （非airgap では repo-server-setup.yml は不要です）"
+        echo ""
+        echo "詳細は docs/online-deployment-guide.md を参照してください。"
+    fi
 else
     log_error "=== セットアップに問題があります ==="
     echo ""

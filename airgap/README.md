@@ -2,6 +2,10 @@
 
 インターネット接続のないオフライン環境で Ansible トレーニングを実施するためのツールキットです。
 
+> **インターネット接続がある環境でも構築できます。**
+> DVD ISO もオフラインバンドルも不要な非airgap 構成は
+> [非airgap 構築ガイド](docs/online-deployment-guide.md) を参照してください。
+
 ## アーキテクチャ
 
 ```
@@ -34,6 +38,7 @@
 |---|---|---|
 | [バンドル作成ガイド](docs/bundle-preparation.md) | エンジニア | オンライン環境でバンドルを作成する手順 |
 | [構築ガイド](docs/deployment-guide.md) | エンジニア | オフライン環境にトレーニング環境を構築する手順 |
+| [非airgap 構築ガイド](docs/online-deployment-guide.md) | エンジニア | インターネット接続のある環境に構築する手順 |
 | [アップグレードガイド](docs/upgrade-guide.md) | エンジニア | デプロイ済み環境の資材更新手順 |
 | [開発者ガイド](docs/development-guide.md) | 開発者 | テスト環境構築・アーキテクチャ・改修方法 |
 

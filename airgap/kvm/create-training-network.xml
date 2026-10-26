@@ -1,0 +1,13 @@
+<network>
+  <name>training-nat</name>
+  <bridge name="virbr-training"/>
+  <!-- NAT 転送あり = インターネット接続可（非airgap 検証用） -->
+  <forward mode="nat"/>
+  <ip address="192.168.130.1" netmask="255.255.255.0">
+    <dhcp>
+      <range start="192.168.130.10" end="192.168.130.50"/>
+      <host mac="52:54:00:AA:CC:10" name="rhel-target" ip="192.168.130.10"/>
+      <host mac="52:54:00:AA:CC:20" name="win-target" ip="192.168.130.20"/>
+    </dhcp>
+  </ip>
+</network>
