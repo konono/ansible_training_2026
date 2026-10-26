@@ -158,7 +158,7 @@ if [[ "${1:-}" == "--apply-tar" ]]; then
     echo ""
     echo "training サーバーへの同期:"
     echo "  cd ${DEST_DIR}"
-    echo "  ansible-playbook -i inventory/hosts.yml playbooks/rhel-setup.yml --tags sync-code"
+    echo "  ansible-playbook -i ${INVENTORY_FILE} playbooks/rhel-setup.yml --tags sync-code"
     echo ""
     echo "ロールバック（問題があった場合）:"
     echo "  cp -a ${BACKUP_DIR}/* ${DEST_DIR}/"
